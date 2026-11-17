@@ -7,7 +7,8 @@
 const Nube = (() => {
   const CFG = typeof NUBE_CONFIG !== 'undefined' ? NUBE_CONFIG : null;
   const activa = !!(CFG && CFG.url && CFG.clave);
-  const TABLAS = ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'revisiones', 'presupuestos'];
+  const TABLAS = ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'revisiones', 'presupuestos', 'reparaciones'];
+  const noDisponibles = new Set(); // tablas que aún no existen en Supabase
   // Lo que el rol "taller" puede escribir (el servidor lo hace cumplir de todas formas)
   const ESCRITURA_TALLER = { clientes: 'ed', vehiculos: 'ed', servicios: 'ed', revisiones: 'ed', citas: 'todo', mensajes: 'crea' };
   const SESION_KEY = 'jacks4wd-sesion';
@@ -97,7 +98,9 @@ const Nube = (() => {
     setEstado('Cargando datos de la nube…', 'warn');
     const datos = {}; const crudo = {};
     for (const t of [...TABLAS, 'config']) {
-      const filas = await leerTodo(t);
+      let filas = [];
+      try { filas = await leerTodo(t); noDisponibles.delete(t); }
+      catch (e) { if (e.status === 404) { noDisponibles.add(t); console.warn('Falta la tabla', t); } else throw e; }
       crudo[t] = filas;
       conocido[t] = new Map(filas.map((f) => [f.id, f.actualizado]));
       if (t === 'config') datos.config = filasAConfig(filas);
@@ -124,7 +127,7 @@ const Nube = (() => {
 
   async function sincronizarAhora() {
     let errores = 0;
-    for (const t of [...TABLAS, 'config']) {
+    for (const t of [...TABLAS, 'config'].filter((x) => !noDisponibles.has(x))) {
       const actuales = filasDe(t);
       const prev = snapshot[t] || new Map();
       const nuevos = []; const cambiados = [];
@@ -195,7 +198,7 @@ const Nube = (() => {
     await (sincronizando || Promise.resolve()).catch(() => {});
     let hubo = false;
     try {
-      for (const t of [...TABLAS, 'config']) {
+      for (const t of [...TABLAS, 'config'].filter((x) => !noDisponibles.has(x))) {
         const marcas = await leerTodo(t, 'id,actualizado');
         const prevK = conocido[t] || new Map();
         const idsServidor = new Set(marcas.map((m) => m.id));
@@ -349,6 +352,9 @@ const Nube = (() => {
     temporizador = setInterval(traerCambios, (CFG.segundosActualizacion || 30) * 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) traerCambios(); });
     ofrecerMigracion();
+    if (esAdmin() && noDisponibles.size) {
+      toast(`Falta crear en Supabase: ${[...noDisponibles].join(', ')}. Ejecuta el SQL actualizado (supabase/esquema.sql).`);
+    }
   }
 
   async function iniciar() {

@@ -599,3 +599,41 @@ body.rol-taller [data-rv="borrar"],
 body.rol-taller #lista-pendientes,
 body.rol-taller .acciones-fila [data-pact] { display: none !important; }
 body.modo-nube #btn-conectar { display: none !important; }
+
+/* ---------- Estado del presupuesto y aprobación ---------- */
+.pres-estado { max-width: 900px; margin: 0 auto 16px; }
+.pres-estado h3 { margin: 0 0 10px; }
+.pres-est-botones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pres-est-b { font: inherit; font-weight: 700; padding: 12px; border-radius: 10px; border: 2px solid #d1d5db; background: #fff; cursor: pointer; }
+.pres-est-b.pendiente.activo { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.pres-est-b.aprobado.activo { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+.pres-est-b.rechazado.activo { background: #f3f4f6; border-color: #6b7280; color: #374151; }
+.pres-aprob-resumen { margin-top: 12px; background: var(--ok-bg); color: #14532d; border-radius: 8px; padding: 10px 12px; }
+.aprob { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.aprob h4 { margin: 0 0 6px; }
+.aprob-todo { display: flex; align-items: center; gap: 8px; font-size: 15px; background: #f9fafb; padding: 10px; border-radius: 8px; cursor: pointer; }
+.aprob-todo input, .aprob-tabla input[type="checkbox"] { width: 20px; height: 20px; margin: 0; }
+.aprob-tabla { width: 100%; border-collapse: collapse; }
+.aprob-tabla td { white-space: normal; vertical-align: top; padding: 6px; }
+.aprob-tabla tr { cursor: default; }
+.aprob-tabla tr.no td:not(:first-child) { opacity: .45; }
+.aprob-tabla tr.si { background: #f0fdf4; }
+.aprob-cant { white-space: nowrap; }
+.aprob-cant input { width: 60px; display: inline-block; }
+.aprob-tabla td.num input { width: 100px; }
+.aprob-tabla textarea { resize: none; overflow: hidden; min-width: 180px; }
+.aprob-totales { display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: flex-end; margin-top: 8px; font-size: 14px; }
+
+/* ---------- Reparaciones ---------- */
+.estado-rep { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.estado-rep.en_proceso { background: var(--warn-bg); color: var(--warn); }
+.estado-rep.terminada { background: var(--ok-bg); color: var(--ok); }
+.rep-estado { font: inherit; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 0; white-space: nowrap; }
+button.rep-estado { cursor: pointer; }
+.rep-estado.aprobado { background: var(--ok-bg); color: var(--ok); }
+.rep-estado.rechazado { background: var(--rv-rojo-bg, #fee2e2); color: var(--rv-rojo, #b91c1c); white-space: normal; }
+.rep-sub { font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.rep-nota-entrega { margin-top: 12px; max-width: 360px; }
+.rep-tabla td { vertical-align: middle; }
+.wa-sel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.wa-sel select { width: auto; padding: 4px 6px; font-size: 12px; margin: 0; }

@@ -79,7 +79,7 @@ let dirHandle = null;
 let fileHandle = null;
 
 function vacio() {
-  return { version: 1, actualizado: null, clientes: [], vehiculos: [], servicios: [], citas: [], mensajes: [], aceites: catalogoInicial(), presupuestos: [], revisiones: [], config: {} };
+  return { version: 1, actualizado: null, clientes: [], vehiculos: [], servicios: [], citas: [], mensajes: [], aceites: catalogoInicial(), presupuestos: [], revisiones: [], reparaciones: [], config: {} };
 }
 
 // Estructura de puntos de revisión: solo claves seguras y tipos conocidos
@@ -115,8 +115,8 @@ function normalizarDatos(data) {
   const lista = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
   const nuevoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'presupuestos', 'revisiones'].forEach((k) => (d[k] = lista(d[k])));
-  const todos = [...d.clientes, ...d.vehiculos, ...d.servicios, ...d.citas, ...d.mensajes, ...d.aceites, ...d.presupuestos, ...d.revisiones];
+  ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'presupuestos', 'revisiones', 'reparaciones'].forEach((k) => (d[k] = lista(d[k])));
+  const todos = [...d.clientes, ...d.vehiculos, ...d.servicios, ...d.citas, ...d.mensajes, ...d.aceites, ...d.presupuestos, ...d.revisiones, ...d.reparaciones];
   todos.forEach((x) => { if (!id(x.id)) x.id = nuevoId(); });
 
   d.vehiculos.forEach((v) => { v.clienteId = id(v.clienteId); });
@@ -176,6 +176,22 @@ function normalizarDatos(data) {
     p.numero = Math.max(0, Math.floor(num(p.numero) || 0));
     if (!['pendiente', 'aprobado', 'rechazado'].includes(p.estado)) p.estado = 'pendiente';
     p.items = lista(p.items).map((it) => ({ ...it, cant: num(it.cant) ?? 0, precio: num(it.precio) }));
+    p.reparacionId = id(p.reparacionId);
+    if (p.aprobacion && typeof p.aprobacion === 'object') {
+      p.aprobacion = {
+        fecha: fecha(p.aprobacion.fecha) || hoyISO(), tecnico: String(p.aprobacion.tecnico || ''),
+        items: lista(p.aprobacion.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), precio: num(it.precio) ?? 0, aprobado: !!it.aprobado })),
+      };
+    } else delete p.aprobacion;
+  });
+  d.reparaciones.forEach((r) => {
+    r.presupuestoId = id(r.presupuestoId); r.vehiculoId = id(r.vehiculoId);
+    r.fecha = fecha(r.fecha) || hoyISO();
+    r.numero = Math.max(0, Math.floor(num(r.numero) || 0));
+    r.presupuestoNumero = Math.max(0, Math.floor(num(r.presupuestoNumero) || 0));
+    ['cliente', 'telefono', 'vehiculo', 'tecnico', 'notas', 'notaEntrega'].forEach((k) => (r[k] = String(r[k] || '')));
+    if (!['en_proceso', 'terminada'].includes(r.estado)) r.estado = 'en_proceso';
+    r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));
   });
   return d;
 }
@@ -213,6 +229,34 @@ function telWhatsApp(tel) {
   if (d.startsWith(CONFIG.codigoPais) && d.length > 10) return d;
   if (d.startsWith('0')) d = d.slice(1);
   return CONFIG.codigoPais + d;
+}
+
+// ---------- Abrir WhatsApp ----------
+// Cada dispositivo elige qué WhatsApp usar (se recuerda en ese dispositivo):
+//   business → WhatsApp Business (por defecto en teléfonos y tablets)
+//   normal   → WhatsApp normal / WhatsApp Web (wa.me)
+const ES_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const ES_ANDROID = /Android/i.test(navigator.userAgent);
+const ES_MOVIL = ES_IOS || ES_ANDROID;
+const WA_KEY = 'jacks4wd-whatsapp';
+function preferenciaWhatsApp() {
+  try { return localStorage.getItem(WA_KEY) || (ES_MOVIL ? 'business' : 'normal'); } catch { return ES_MOVIL ? 'business' : 'normal'; }
+}
+function abrirWhatsApp(tel, texto) {
+  const num = tel ? telWhatsApp(tel) : '';
+  const t = encodeURIComponent(texto || '');
+  const pref = preferenciaWhatsApp();
+  let url;
+  if (pref === 'business' && ES_ANDROID) {
+    // Android: abrir directamente la app WhatsApp Business (paquete com.whatsapp.w4b)
+    url = `intent://send?${num ? 'phone=' + num + '&' : ''}text=${t}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;end`;
+  } else if (pref === 'business' && ES_IOS) {
+    url = `whatsapp-business://send?${num ? 'phone=' + num + '&' : ''}text=${t}`;
+  } else {
+    url = `https://wa.me/${num}?text=${t}`;
+  }
+  if (ES_MOVIL) window.location.href = url; // en móviles abre la app directamente
+  else window.open(url, '_blank', 'noopener');
 }
 
 function toast(msg) {
@@ -841,17 +885,16 @@ function candidatosRecordatorio() {
 
 function tarjetaRecordatorio({ v, c, s, e }, modo) {
   const msg = mensajeRecordatorio(c, v, s);
-  const url = `https://wa.me/${telWhatsApp(c.telefono)}?text=${encodeURIComponent(msg)}`;
   let acciones = '';
   if (modo === 'pendiente') {
-    acciones = `<a class="btn small wa" href="${url}" target="_blank" rel="noopener" data-act="enviar" data-sid="${s.id}">Enviar por WhatsApp</a>
+    acciones = `<button class="btn small wa" data-act="enviar" data-sid="${s.id}">Enviar por WhatsApp</button>
       <button class="btn small ghost" data-act="marcar" data-sid="${s.id}">Marcar como enviado</button>
       <button class="btn small ghost" data-act="agendar" data-vid="${v.id}">Agendar cita</button>`;
   } else if (modo === 'proximo') {
     acciones = `<button class="btn small ghost" data-act="mensaje" data-vid="${v.id}">Enviar ahora</button>`;
   } else if (modo === 'enviado') {
     acciones = `<button class="btn small ghost" data-act="agendar" data-vid="${v.id}">Agendar cita</button>
-      <a class="btn small ghost" href="${url}" target="_blank" rel="noopener">Reenviar</a>
+      <button class="btn small ghost" data-act="reenviar" data-sid="${s.id}">Reenviar</button>
       <button class="btn small ghost" data-act="desmarcar" data-sid="${s.id}">Deshacer envío</button>`;
   }
   const info = modo === 'pendiente' ? `<span class="estado vencido">Desde ${fmtFecha(e.vence)}</span>`
@@ -940,7 +983,7 @@ function formMensaje(preVid = null, preTipo = null) {
     const tel = f.telefono.value.trim(); const texto = f.texto.value.trim();
     if (soloDigitos(tel).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos (ej. 0414-1234567).'); return; }
     if (texto.startsWith('(')) { alert('El mensaje no es válido. Elige otra plantilla o escribe el texto.'); return; }
-    window.open(`https://wa.me/${telWhatsApp(tel)}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+    abrirWhatsApp(tel, texto);
     const { s } = datos();
     db.mensajes = db.mensajes || [];
     db.mensajes.push({ id: uid(), vehiculoId: vidSel, telefono: tel, tipo: f.tipo.value, texto, fecha: hoyISO(), creado: new Date().toISOString() });
@@ -1051,7 +1094,7 @@ async function enviarCitaCliente(ct) {
     if (!ct.vehiculoId) ct.telefonoLibre = tel;
   }
   const texto = mensajeCitaCliente(ct);
-  window.open(`https://wa.me/${telWhatsApp(tel)}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  abrirWhatsApp(tel, texto);
   ct.avisoCliente = hoyISO();
   db.mensajes.push({ id: uid(), vehiculoId: ct.vehiculoId || null, telefono: tel, tipo: 'cita', texto, fecha: hoyISO(), creado: new Date().toISOString() });
   await guardar();
@@ -1060,7 +1103,7 @@ async function enviarCitaCliente(ct) {
 
 async function enviarCitaGrupo(ct) {
   // WhatsApp no permite abrir un grupo por enlace: se abre con el mensaje listo y se elige el grupo.
-  window.open(`https://wa.me/?text=${encodeURIComponent(mensajeCitaGrupo(ct))}`, '_blank', 'noopener');
+  abrirWhatsApp(null, mensajeCitaGrupo(ct));
   ct.avisoGrupo = hoyISO();
   await guardar();
   toast('Elige el grupo del equipo en WhatsApp y envía');
@@ -1157,6 +1200,7 @@ function renderTodo() {
   renderCatalogo();
   if (typeof renderPresupuestos === 'function') renderPresupuestos(); // definido en presupuestos.js
   if (typeof renderRevisiones === 'function') renderRevisiones(); // definido en revisiones.js
+  if (typeof renderReparaciones === 'function') renderReparaciones(); // definido en reparaciones.js
   aceiteNuevo.refrescar();
 }
 
@@ -1169,6 +1213,9 @@ function init() {
   $$('.tab').forEach((b) => (b.onclick = () => irA(b.dataset.tab)));
   $('#btn-conectar').onclick = conectarCarpeta;
   $('#btn-exportar').onclick = exportar;
+  const selWa = $('#sel-whatsapp');
+  selWa.value = preferenciaWhatsApp();
+  selWa.onchange = () => { try { localStorage.setItem(WA_KEY, selWa.value); } catch { /* sin almacenamiento */ } toast(`Este dispositivo abrirá WhatsApp ${selWa.value === 'business' ? 'Business' : 'normal'}`); };
   $('#input-importar').onchange = (e) => { if (e.target.files[0]) importar(e.target.files[0]); e.target.value = ''; };
 
   // Nuevo registro
@@ -1227,7 +1274,14 @@ function init() {
         }
         break;
       }
-      case 'enviar': setTimeout(() => marcarEnviado(sid, true), 300); break; // el enlace abre WhatsApp
+      case 'enviar':
+      case 'reenviar': {
+        const s = db.servicios.find((x) => x.id === sid); const v = s && vehiculo(s.vehiculoId); const c = v && cliente(v.clienteId);
+        if (!c) break;
+        abrirWhatsApp(c.telefono, mensajeRecordatorio(c, v, s));
+        if (act === 'enviar') marcarEnviado(sid, true);
+        break;
+      }
       case 'marcar': marcarEnviado(sid, true); break;
       case 'desmarcar': marcarEnviado(sid, false); break;
     }

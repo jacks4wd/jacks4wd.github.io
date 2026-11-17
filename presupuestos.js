@@ -65,7 +65,7 @@ function renderPresupuestos() {
       <td>${fmtFecha(p.fecha)}</td>
       <td>${esc(p.cliente || '—')}</td>
       <td>${esc(p.vehiculo || '—')}</td>
-      <td class="num"><strong>${fmtUSD(totalesPres(p).total)}</strong></td>
+      <td class="num"><strong>${fmtUSD(totalesPres(p).total)}</strong>${p.estado === 'aprobado' && p.aprobacion ? `<br><small class="hint">Aprobado: ${fmtUSD(totalesPres({ items: p.aprobacion.items.filter((i) => i.aprobado) }).total)}</small>` : ''}</td>
       <td><span class="estado-pres ${p.estado}">${ESTADOS_PRES[p.estado] || p.estado}</span></td>
       <td class="acciones-fila">
         <button class="btn tiny ghost" data-pact="pdf-lista" data-pid="${p.id}">PDF</button>
@@ -97,7 +97,7 @@ function nuevoPresupuesto(vid = null, extra = null) {
     vehiculoId: null, cliente: '', telefono: '', vehiculo: '', direccion: '',
     items: [itemVacio()], observaciones: CONDICIONES_PREDETERMINADAS,
   };
-  presNuevo = true; presDirty = false;
+  presNuevo = true; presDirty = false; aprobEdit = null;
   if (vid) asignarVehiculo(vid);
   if (extra?.items?.length) { presEdit.items = extra.items.map((it) => ({ ...itemVacio(), ...it })); presDirty = true; }
   if (extra?.revisionId) presEdit.revisionId = extra.revisionId;
@@ -111,7 +111,7 @@ function abrirPresupuesto(id) {
   presEdit = JSON.parse(JSON.stringify(p));
   presEdit.items = presEdit.items.map((it) => ({ ...it, precio: it.precio ?? NaN }));
   if (!presEdit.items.length) presEdit.items.push(itemVacio());
-  presNuevo = false; presDirty = false;
+  presNuevo = false; presDirty = false; aprobEdit = null;
   pintarEditor();
   mostrarEditor(true);
 }
@@ -144,9 +144,7 @@ function pintarEditor() {
   $('#pres-editor').innerHTML = `
     <div class="card pres-toolbar">
       <button class="btn ghost" data-pact="volver">← Presupuestos</button>
-      <label class="estado-sel">Estado
-        <select id="pres-estado">${Object.entries(ESTADOS_PRES).map(([k, v]) => `<option value="${k}" ${k === p.estado ? 'selected' : ''}>${v}</option>`).join('')}</select>
-      </label>
+      <span class="estado-pres ${p.estado}">${ESTADOS_PRES[p.estado] || ''}</span>
       <span class="spacer"></span>
       ${presNuevo ? '' : '<button class="btn ghost" data-pact="duplicar">Duplicar</button><button class="btn danger" data-pact="borrar">Eliminar</button>'}
       <button class="btn ghost" data-pact="pdf">⬇ PDF</button>
@@ -210,15 +208,144 @@ function pintarEditor() {
         </div>
         <textarea name="observaciones" rows="5" placeholder="Ej: validez del presupuesto, tiempo de entrega, garantía…">${esc(p.observaciones)}</textarea>
       </div>
-    </form>`;
+    </form>
+    <div id="pres-estado-panel"></div>`;
   actualizarTotales();
+  pintarPanelEstado();
+}
+
+// ===================== ESTADO Y APROBACIÓN =====================
+// La aprobación guarda los ítems tal como los aprobó el cliente (se pueden ajustar
+// cantidades y precios, p. ej. la mano de obra) sin tocar el presupuesto original.
+let aprobEdit = null; // copia de trabajo mientras se marca la aprobación
+
+function opcionesTecnico(actual) {
+  const lista = typeof tecnicos === 'function' ? tecnicos() : [];
+  const otro = actual && !lista.includes(actual);
+  return `<option value="">Selecciona…</option>${lista.map((t) => `<option ${t === actual ? 'selected' : ''}>${esc(t)}</option>`).join('')}<option value="__otro" ${otro ? 'selected' : ''}>Otro…</option>`;
+}
+
+function panelAprobacionHTML() {
+  const a = aprobEdit;
+  const todos = a.items.length && a.items.every((it) => it.aprobado);
+  const otro = a.tecnico && !(typeof tecnicos === 'function' ? tecnicos() : []).includes(a.tecnico);
+  return `<div class="aprob">
+    <h4>¿Qué aprobó el cliente?</h4>
+    <label class="aprob-todo"><input type="checkbox" id="aprob-todo" ${todos ? 'checked' : ''}> Aprobar el presupuesto completo</label>
+    <p class="hint">Marca los ítems aprobados. Puedes ajustar cantidad, descripción o precio (por ejemplo, la mano de obra si se reparan menos ítems). Los no marcados quedarán como <strong>"Rechazado – pendiente por reparación"</strong>.</p>
+    <div class="table-wrap">
+      <table class="aprob-tabla">
+        <thead><tr><th></th><th>Cant.</th><th>Descripción</th><th class="num">Precio USD</th><th class="num">Total USD</th></tr></thead>
+        <tbody>${a.items.map((it, i) => `<tr data-ai="${i}" class="${it.aprobado ? 'si' : 'no'}">
+          <td><input type="checkbox" data-aprob ${it.aprobado ? 'checked' : ''} aria-label="Aprobado"></td>
+          <td class="aprob-cant"><input name="cant" inputmode="decimal" value="${fmtCant(it.cant)}"> <small>${esc(it.unidad)}</small></td>
+          <td><textarea name="desc" rows="1">${esc(it.desc)}</textarea></td>
+          <td class="num"><input name="precio" class="num" inputmode="decimal" value="${Number.isFinite(it.precio) ? r2(it.precio).toFixed(2) : ''}"></td>
+          <td class="num aprob-total">${fmtUSD(lineaTotal(it))}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="aprob-totales" id="aprob-totales"></div>
+    <div class="grid" style="margin-top:10px">
+      <label>Técnico asignado a la reparación *<select id="aprob-tecnico">${opcionesTecnico(a.tecnico)}</select></label>
+      <label id="aprob-tecnico-otro-wrap" ${otro ? '' : 'hidden'}>Nombre del técnico<input id="aprob-tecnico-otro" value="${otro ? esc(a.tecnico) : ''}"></label>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button type="button" class="btn ghost" data-pact="aprob-cancelar">Cancelar</button>
+      <button type="button" class="btn primary" data-pact="aprob-confirmar">Confirmar aprobación</button>
+    </div>
+  </div>`;
+}
+
+function totalesAprobacion() {
+  if (!aprobEdit) return;
+  const ap = aprobEdit.items.filter((it) => it.aprobado);
+  const t = totalesPres({ items: ap });
+  const el = $('#aprob-totales');
+  if (el) el.innerHTML = `<span>${ap.length} de ${aprobEdit.items.length} ítem(s) aprobados</span>
+    <span>Subtotal: <strong>${fmtUSD(t.subtotal)}</strong></span><span>IVA: <strong>${fmtUSD(t.iva)}</strong></span><span>Total aprobado: <strong>$${fmtUSD(t.total)}</strong></span>`;
+  $$('.aprob-tabla tbody tr').forEach((tr, i) => {
+    tr.className = aprobEdit.items[i].aprobado ? 'si' : 'no';
+    tr.querySelector('.aprob-total').textContent = fmtUSD(lineaTotal(aprobEdit.items[i]));
+  });
+  const todo = $('#aprob-todo'); if (todo) todo.checked = aprobEdit.items.every((it) => it.aprobado);
+}
+
+function pintarPanelEstado() {
+  const cont = $('#pres-estado-panel'); if (!cont || !presEdit) return;
+  const p = presEdit;
+  if (presNuevo) {
+    cont.innerHTML = '<div class="card pres-estado"><h3>Estado del presupuesto</h3><p class="hint">Guarda el presupuesto para poder marcarlo como aprobado o rechazado.</p></div>';
+    return;
+  }
+  const btn = (k) => `<button type="button" class="pres-est-b ${k} ${p.estado === k ? 'activo' : ''}" data-pact="estado" data-estado="${k}">${ESTADOS_PRES[k]}</button>`;
+  let resumen = '';
+  if (p.estado === 'aprobado' && p.aprobacion && !aprobEdit) {
+    const ap = p.aprobacion.items.filter((it) => it.aprobado);
+    const t = totalesPres({ items: ap });
+    resumen = `<div class="pres-aprob-resumen">
+      <div>Aprobado el <strong>${fmtFecha(p.aprobacion.fecha)}</strong> · ${ap.length} de ${p.aprobacion.items.length} ítem(s) · Total aprobado <strong>$${fmtUSD(t.total)}</strong>${p.aprobacion.tecnico ? ` · Técnico: ${esc(p.aprobacion.tecnico)}` : ''}</div>
+      <div class="actions" style="justify-content:flex-start;margin-top:8px">
+        <button type="button" class="btn small ghost" data-pact="aprob-modificar">Modificar aprobación</button>
+        ${p.reparacionId ? '<button type="button" class="btn small primary" data-pact="ver-reparacion">Ver reparación</button>' : ''}
+      </div>
+    </div>`;
+  }
+  cont.innerHTML = `<div class="card pres-estado">
+    <h3>Estado del presupuesto</h3>
+    <div class="pres-est-botones">${btn('pendiente')}${btn('aprobado')}${btn('rechazado')}</div>
+    ${resumen}
+    ${aprobEdit ? panelAprobacionHTML() : ''}
+  </div>`;
+  if (aprobEdit) { totalesAprobacion(); $$('.aprob-tabla textarea').forEach(autoAltura); }
+}
+
+function iniciarAprobacion() {
+  const p = presEdit;
+  const rev = p.revisionId && db.revisiones?.find((r) => r.id === p.revisionId);
+  if (p.aprobacion) aprobEdit = JSON.parse(JSON.stringify(p.aprobacion));
+  else aprobEdit = { tecnico: rev?.tecnico || '', items: itemsUsados(p).map((it) => ({ cant: it.cant, unidad: it.unidad, desc: it.desc, sku: it.sku, precio: Number.isFinite(it.precio) ? it.precio : 0, aprobado: false })) };
+  pintarPanelEstado();
+  $('#pres-estado-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function leerTecnicoAprob() {
+  const s = $('#aprob-tecnico'); if (!s) return aprobEdit.tecnico;
+  return s.value === '__otro' ? $('#aprob-tecnico-otro').value.trim() : s.value;
+}
+
+async function confirmarAprobacion() {
+  aprobEdit.tecnico = leerTecnicoAprob();
+  const ap = aprobEdit.items.filter((it) => it.aprobado);
+  if (!ap.length) { alert('Marca al menos un ítem aprobado. Si el cliente no aprobó nada, marca el presupuesto como "Rechazado".'); return; }
+  if (!aprobEdit.tecnico) { alert('Selecciona el técnico asignado a la reparación.'); $('#aprob-tecnico').focus(); return; }
+  const p = presEdit;
+  p.estado = 'aprobado';
+  p.aprobacion = { ...aprobEdit, fecha: aprobEdit.fecha || hoyISO() };
+  const rep = crearOActualizarReparacion(p);
+  p.reparacionId = rep.id;
+  aprobEdit = null;
+  const g = db.presupuestos.find((x) => x.id === p.id);
+  if (g) Object.assign(g, { estado: p.estado, aprobacion: JSON.parse(JSON.stringify(p.aprobacion)), reparacionId: p.reparacionId });
+  await guardar();
+  pintarEditor();
+  toast(`Presupuesto aprobado. Reparación ${numRep(rep.numero)} creada en la pestaña Reparaciones.`);
+}
+
+async function cambiarEstadoSimple(estado) {
+  const p = presEdit;
+  if (p.estado === 'aprobado' && p.reparacionId && !confirm(`El presupuesto pasará a "${ESTADOS_PRES[estado]}". La reparación ya creada se conserva en la pestaña Reparaciones. ¿Continuar?`)) return;
+  p.estado = estado; aprobEdit = null;
+  const g = db.presupuestos.find((x) => x.id === p.id); if (g) g.estado = estado;
+  await guardar();
+  pintarEditor();
+  toast(`Presupuesto marcado como ${ESTADOS_PRES[estado].toLowerCase()}`);
 }
 
 // Lee el formulario y las líneas hacia presEdit
 function leerEditor() {
   const f = $('#form-pres'); if (!f || !presEdit) return;
   ['cliente', 'fecha', 'vehiculo', 'telefono', 'direccion', 'observaciones'].forEach((k) => (presEdit[k] = f[k].value.trim()));
-  presEdit.estado = $('#pres-estado').value;
   presEdit.items = $$('#pres-items tr').map((tr) => {
     const g = (n) => tr.querySelector(`[name="${n}"]`).value;
     const cant = parseDec(g('cant'));
@@ -388,7 +515,7 @@ async function enviarWhatsApp(p) {
     if (guardado) guardado.telefono = tel;
     if (presEdit && presEdit.id === p.id) { const inp = $('#form-pres [name="telefono"]'); if (inp) inp.value = tel; }
   }
-  window.open(`https://wa.me/${telWhatsApp(tel)}?text=${encodeURIComponent(mensajePresupuesto(p))}`, '_blank', 'noopener');
+  abrirWhatsApp(tel, mensajePresupuesto(p));
   db.mensajes = db.mensajes || [];
   db.mensajes.push({ id: uid(), vehiculoId: p.vehiculoId || null, telefono: tel, tipo: 'presupuesto', texto: `Presupuesto ${numPres(p.numero)} · Total $${fmtUSD(totalesPres(p).total)}`, fecha: hoyISO(), creado: new Date().toISOString() });
   await guardar(false);
@@ -418,10 +545,28 @@ function initPresupuestos() {
       return;
     }
     if (e.target.name === 'desc') autoAltura(e.target);
+    // Panel de aprobación: editar cantidad, descripción o precio aprobados
+    const fila = aprobEdit && e.target.closest('.aprob-tabla tr[data-ai]');
+    if (fila) {
+      const it = aprobEdit.items[Number(fila.dataset.ai)];
+      if (e.target.name === 'cant') { const n = parseDec(e.target.value); it.cant = Number.isFinite(n) ? n : 0; }
+      if (e.target.name === 'precio') { const n = parseDec(e.target.value); it.precio = Number.isFinite(n) ? n : 0; }
+      if (e.target.name === 'desc') it.desc = e.target.value.trim();
+      totalesAprobacion();
+      return;
+    }
     if (e.target.closest('#form-pres')) { presDirty = true; actualizarTotales(); }
   });
   ed.addEventListener('change', (e) => {
-    if (e.target.id === 'pres-estado' || e.target.closest('#form-pres')) { presDirty = true; actualizarTotales(); }
+    if (aprobEdit && e.target.matches('[data-aprob]')) {
+      aprobEdit.items[Number(e.target.closest('tr').dataset.ai)].aprobado = e.target.checked; totalesAprobacion(); return;
+    }
+    if (aprobEdit && e.target.id === 'aprob-todo') {
+      aprobEdit.items.forEach((it) => (it.aprobado = e.target.checked));
+      $$('.aprob-tabla [data-aprob]').forEach((c) => (c.checked = e.target.checked)); totalesAprobacion(); return;
+    }
+    if (e.target.id === 'aprob-tecnico') { $('#aprob-tecnico-otro-wrap').hidden = e.target.value !== '__otro'; aprobEdit.tecnico = leerTecnicoAprob(); return; }
+    if (e.target.closest('#form-pres')) { presDirty = true; actualizarTotales(); }
     // Al salir del precio, mostrarlo con 2 decimales
     if (e.target.name === 'precio') { const n = parseDec(e.target.value); if (Number.isFinite(n)) e.target.value = r2(n).toFixed(2); }
   });
@@ -447,6 +592,16 @@ function initPresupuestos() {
     const b = e.target.closest('[data-pact]'); if (!b) return;
     switch (b.dataset.pact) {
       case 'volver': volverALista(); break;
+      case 'estado': {
+        const est = b.dataset.estado;
+        if (presDirty && !(await guardarPresupuesto(true))) break;
+        if (est === 'aprobado') iniciarAprobacion(); else await cambiarEstadoSimple(est);
+        break;
+      }
+      case 'aprob-modificar': iniciarAprobacion(); break;
+      case 'aprob-cancelar': aprobEdit = null; pintarPanelEstado(); break;
+      case 'aprob-confirmar': await confirmarAprobacion(); break;
+      case 'ver-reparacion': if (confirmarSalida()) { presDirty = false; irSubtabPres('reparaciones'); abrirReparacion(presEdit.reparacionId); } break;
       case 'fila': agregarFila(); break;
       case 'obs-condiciones': {
         const t = $('#form-pres [name="observaciones"]');

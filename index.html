@@ -21,6 +21,9 @@
   </div>
   <div class="storage">
     <span id="estado-datos" class="pill">Sin conectar</span>
+    <label class="wa-sel" title="Qué WhatsApp se abre en este dispositivo">WhatsApp
+      <select id="sel-whatsapp"><option value="business">Business</option><option value="normal">Normal</option></select>
+    </label>
     <button class="btn small ghost solo-admin" id="btn-ir-config" title="Puntos de revisión, técnicos y catálogo de aceites">⚙ Configuración</button>
     <button id="btn-conectar" class="btn small">Conectar carpeta de datos</button>
     <button id="btn-exportar" class="btn small ghost solo-admin" title="Descargar copia de seguridad">Exportar copia</button>
@@ -194,6 +197,11 @@
 
   <!-- ============ REVISIONES ============ -->
   <section id="tab-presupuestos" class="panel">
+    <div class="subtabs">
+      <button class="subtab active" data-prtab="presupuestos">Presupuestos</button>
+      <button class="subtab" data-prtab="reparaciones">Reparaciones <span id="rep-contador" class="contador"></span></button>
+    </div>
+    <div id="pr-presupuestos">
     <div id="pres-lista" class="card">
       <div class="form-head">
         <h2>Presupuestos</h2>
@@ -217,6 +225,34 @@
       <p id="vacio-pres" class="vacio" hidden></p>
     </div>
     <div id="pres-editor" hidden></div>
+    </div>
+
+    <div id="pr-reparaciones" hidden>
+      <div id="rep-lista" class="card">
+        <div class="form-head">
+          <div>
+            <h2>Reparaciones</h2>
+            <p class="hint" style="margin:0">Se crean al aprobar un presupuesto. Registro de lo reparado, sin precios.</p>
+          </div>
+        </div>
+        <div class="filtros">
+          <input id="buscar-rep" type="search" placeholder="Buscar por cliente, vehículo, placa, técnico o nota de entrega…">
+          <select id="filtro-rep">
+            <option value="">Todas</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="terminada">Terminadas</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Técnico</th><th>Ítems</th><th>Nota de entrega</th><th>Estado</th></tr></thead>
+            <tbody id="tabla-rep"></tbody>
+          </table>
+        </div>
+        <p id="vacio-rep" class="vacio" hidden></p>
+      </div>
+      <div id="rep-editor" hidden></div>
+    </div>
   </section>
 
   <section id="tab-revisiones" class="panel">
@@ -264,6 +300,7 @@
 <script src="app.js"></script>
 <script src="presupuestos.js"></script>
 <script src="revisiones.js"></script>
+<script src="reparaciones.js"></script>
 <script src="configuracion.js"></script>
 <script src="nube.js"></script>
 </body>

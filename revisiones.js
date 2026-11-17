@@ -553,7 +553,7 @@ async function enviarDiagnostico(rev) {
     if (soloDigitos(tel).length < 10) return;
   }
   const texto = mensajeDiagnostico(rev);
-  window.open(`https://wa.me/${telWhatsApp(tel)}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  abrirWhatsApp(tel, texto);
   db.mensajes.push({ id: uid(), vehiculoId: rev.vehiculoId, telefono: tel, tipo: 'revision', texto: `Diagnóstico revisión ${numRev(rev.numero)}`, fecha: hoyISO(), creado: new Date().toISOString() });
   const g = db.revisiones.find((x) => x.id === rev.id); if (g) g.diagnosticoEnviado = hoyISO();
   await guardar(false);
