@@ -627,7 +627,8 @@ body.modo-nube #btn-conectar { display: none !important; }
 /* ---------- Reparaciones ---------- */
 .estado-rep { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
 .estado-rep.en_proceso { background: var(--warn-bg); color: var(--warn); }
-.estado-rep.terminada { background: var(--ok-bg); color: var(--ok); }
+.estado-rep.culminado { background: var(--ok-bg); color: var(--ok); }
+.estado-rep.cancelado { background: #f3f4f6; color: #4b5563; }
 .rep-estado { font: inherit; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 0; white-space: nowrap; }
 button.rep-estado { cursor: pointer; }
 .rep-estado.aprobado { background: var(--ok-bg); color: var(--ok); }
@@ -685,3 +686,10 @@ button.rep-estado { cursor: pointer; }
 .rv-sel-botones { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pres-veh-sel { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .campos-veh { margin-top: 4px; }
+.rep-estado-card { max-width: 900px; margin: 0 auto 16px; }
+.rep-estado-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rep-estado-acciones > span { font-weight: 700; margin-right: 4px; }
+.pres-est-b.culminado { border-color: var(--ok); color: var(--ok); }
+.pres-est-b.cancelado { border-color: #6b7280; color: #374151; }
+.rep-cerrada { background: #f3f4f6; border-left: 4px solid #6b7280; padding: 10px 12px; border-radius: 6px; }
+.pres-origen { background: #eff6ff; border-left: 4px solid #2563eb; padding: 8px 12px; border-radius: 6px; margin: 0 auto 12px; max-width: 900px; font-size: 14px; }

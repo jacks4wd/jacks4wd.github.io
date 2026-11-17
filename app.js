@@ -183,6 +183,7 @@ function normalizarDatos(data) {
     if (!['pendiente', 'aprobado', 'rechazado'].includes(p.estado)) p.estado = 'pendiente';
     p.items = lista(p.items).map((it) => ({ ...it, cant: num(it.cant) ?? 0, precio: num(it.precio) }));
     p.reparacionId = id(p.reparacionId);
+    if (p.origen && typeof p.origen === 'object') p.origen = { reparacionId: id(p.origen.reparacionId), presupuestoId: id(p.origen.presupuestoId) }; else delete p.origen;
     if (p.aprobacion && typeof p.aprobacion === 'object') {
       p.aprobacion = {
         fecha: fecha(p.aprobacion.fecha) || hoyISO(), tecnico: String(p.aprobacion.tecnico || ''),
@@ -196,7 +197,9 @@ function normalizarDatos(data) {
     r.numero = Math.max(0, Math.floor(num(r.numero) || 0));
     r.presupuestoNumero = Math.max(0, Math.floor(num(r.presupuestoNumero) || 0));
     ['cliente', 'telefono', 'vehiculo', 'tecnico', 'notas', 'notaEntrega'].forEach((k) => (r[k] = String(r[k] || '')));
-    if (!['en_proceso', 'terminada'].includes(r.estado)) r.estado = 'en_proceso';
+    if (r.estado === 'terminada') r.estado = 'culminado'; // nombre anterior
+    if (!['en_proceso', 'culminado', 'cancelado'].includes(r.estado)) r.estado = 'en_proceso';
+    r.fechaCierre = fecha(r.fechaCierre); r.cerradoPor = String(r.cerradoPor || '');
     r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));
   });
   return d;

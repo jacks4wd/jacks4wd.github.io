@@ -130,6 +130,7 @@ function nuevoPresupuesto(vid = null, extra = null) {
   if (vid) asignarVehiculo(vid);
   if (extra?.items?.length) { presEdit.items = extra.items.map((it) => ({ ...itemVacio(), ...it })); presDirty = true; }
   if (extra?.revisionId) presEdit.revisionId = extra.revisionId;
+  if (extra?.origen) presEdit.origen = extra.origen; // creado desde los rechazados de una reparación
   pintarEditor();
   mostrarEditor(true);
   const c = $('#form-pres [name="cliente"]'); if (c && !vid) c.focus();
@@ -143,6 +144,14 @@ function abrirPresupuesto(id) {
   presNuevo = false; presDirty = false; aprobEdit = null; presOtroDe = null;
   pintarEditor();
   mostrarEditor(true);
+}
+
+// Aviso cuando el presupuesto se creó a partir de los ítems rechazados de una reparación
+function origenPresHTML() {
+  const o = presEdit?.origen; if (!o?.reparacionId) return '';
+  const rep = (db.reparaciones || []).find((r) => r.id === o.reparacionId);
+  const p0 = o.presupuestoId && db.presupuestos.find((p) => p.id === o.presupuestoId);
+  return `<div class="pres-origen">Creado a partir de los ítems rechazados de la reparación <strong>${rep ? numRep(rep.numero) : '(eliminada)'}</strong>${p0 ? ` (presupuesto original ${numPres(p0.numero)})` : ''}.</div>`;
 }
 
 // Cliente registrado seleccionado + opción de agregarle otro vehículo
@@ -219,6 +228,7 @@ function pintarEditor() {
       <div id="pres-veh-registrado">${vehiculoRegistradoHTML()}</div>
     </div>
 
+    ${origenPresHTML()}
     <form id="form-pres" class="doc doc-editor" autocomplete="off">
       <div class="doc-head">
         <img class="doc-logo" src="img/logo.png" alt="Jacks">
@@ -340,6 +350,19 @@ function pintarPanelEstado() {
     cont.innerHTML = '<div class="card pres-estado"><h3>Estado del presupuesto</h3><p class="hint">Guarda el presupuesto para poder marcarlo como aprobado o rechazado.</p></div>';
     return;
   }
+  // Si su reparación ya está culminada o cancelada, el estado y la aprobación quedan fijos
+  const repCerrada = p.reparacionId && typeof esCerrada === 'function' && esCerrada((db.reparaciones || []).find((r) => r.id === p.reparacionId));
+  if (repCerrada) {
+    const rep = db.reparaciones.find((r) => r.id === p.reparacionId);
+    const ap = (p.aprobacion?.items || []).filter((it) => it.aprobado);
+    cont.innerHTML = `<div class="card pres-estado">
+      <h3>Estado del presupuesto: <span class="estado-pres ${p.estado}">${ESTADOS_PRES[p.estado]}</span></h3>
+      <div class="rep-cerrada">🔒 Su reparación ${numRep(rep.numero)} está <strong>${rep.estado === 'cancelado' ? 'cancelada' : 'culminada'}</strong>. La aprobación ya no se puede modificar.
+        ${p.aprobacion ? `<br>Aprobado el ${fmtFecha(p.aprobacion.fecha)} · ${ap.length} de ${p.aprobacion.items.length} ítem(s) · Total aprobado $${fmtUSD(totalesPres({ items: ap }).total)}` : ''}</div>
+      <div class="actions" style="justify-content:flex-start;margin-top:8px"><button type="button" class="btn small primary" data-pact="ver-reparacion">Ver reparación</button></div>
+    </div>`;
+    return;
+  }
   const btn = (k) => `<button type="button" class="pres-est-b ${k} ${p.estado === k ? 'activo' : ''}" data-pact="estado" data-estado="${k}">${ESTADOS_PRES[k]}</button>`;
   let resumen = '';
   if (p.estado === 'aprobado' && p.aprobacion && !aprobEdit) {
@@ -377,6 +400,8 @@ function leerTecnicoAprob() {
 }
 
 async function confirmarAprobacion() {
+  const repPrev = presEdit.reparacionId && (db.reparaciones || []).find((r) => r.id === presEdit.reparacionId);
+  if (esCerrada(repPrev)) { alert('La reparación de este presupuesto ya está cerrada; la aprobación no se puede modificar.'); aprobEdit = null; pintarPanelEstado(); return; }
   aprobEdit.tecnico = leerTecnicoAprob();
   const ap = aprobEdit.items.filter((it) => it.aprobado);
   if (!ap.length) { alert('Marca al menos un ítem aprobado. Si el cliente no aprobó nada, marca el presupuesto como "Rechazado".'); return; }
@@ -397,6 +422,7 @@ async function confirmarAprobacion() {
 
 async function cambiarEstadoSimple(estado) {
   const p = presEdit;
+  if (p.reparacionId && esCerrada((db.reparaciones || []).find((r) => r.id === p.reparacionId))) { alert('La reparación de este presupuesto ya está cerrada; el estado no se puede cambiar.'); return; }
   if (p.estado === 'aprobado' && p.reparacionId && !confirm(`El presupuesto pasará a "${ESTADOS_PRES[estado]}". La reparación ya creada se conserva en la pestaña Reparaciones. ¿Continuar?`)) return;
   p.estado = estado; aprobEdit = null;
   const g = db.presupuestos.find((x) => x.id === p.id); if (g) g.estado = estado;
