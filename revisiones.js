@@ -19,6 +19,7 @@ const TIPOS_PUNTO = {
   traseras: 'Pregunta "¿Aplica traseras?"',
   fugas: 'Fugas (Sí / No + fluidos)',
   fluidos: 'Nivel y estado de fluidos',
+  botones: 'Botones personalizados',
 };
 
 const CONFIG_REVISION_INICIAL = {
@@ -97,7 +98,7 @@ function tecnicos() {
 }
 
 // Convierte un punto de la configuración al formato que usa el checklist
-function defDe(item) {
+function defDe(item, e = null) {
   const d = { k: item.k, n: item.n };
   if (item.naTexto) d.naTexto = item.naTexto;
   if (item.tipo === 'vida') d.vida = true;
@@ -105,6 +106,10 @@ function defDe(item) {
   if (item.tipo === 'traseras') d.traseras = { k: item.kTras || item.k + '_tras', n: item.nTras || item.n + ' (traseras)' };
   if (item.tipo === 'fugas') { d.fugas = true; d.fluidos = (item.sub || []).map((s) => [s.k, s.n]); }
   if (item.tipo === 'fluidos') d.selector = (item.sub || []).map((s) => ({ k: s.k, n: s.n, fluido: true }));
+  if (item.tipo === 'botones') {
+    const j = (e?.botones || []).find((x) => x.id === item.juego);
+    if (j && j.op.length) d.opciones = j.op; // si el juego no existe, se usan los 4 botones normales
+  }
   return d;
 }
 
@@ -114,7 +119,7 @@ const cacheEstructura = new WeakMap();
 function estructuraDe(rev) {
   const e = rev.estructura || configRevision();
   if (!cacheEstructura.has(e)) {
-    const conv = (secs) => (secs || []).map((s) => ({ t: s.t, items: (s.items || []).map(defDe) }));
+    const conv = (secs) => (secs || []).map((s) => ({ t: s.t, items: (s.items || []).map((it) => defDe(it, e)) }));
     const basica = conv(e.basica); const completa = conv(e.completa);
     const defs = {};
     [...basica, ...completa].forEach((s) => s.items.forEach((d) => {
@@ -181,6 +186,7 @@ function textoFluido(it) {
 // Texto del estado para el diagnóstico y el PDF
 function etiquetaEstado(def, it) {
   const g = grupoDe(def, it);
+  if (def.opciones && it?.op) return it.op;
   if (def.fugas) return g === 'reemplazo' ? 'Fuga detectada' : 'Sin fugas';
   if (def.fluido) { const t = textoFluido(it); return t.charAt(0).toUpperCase() + t.slice(1); }
   if (def.vida && VIDA_FRENOS[g]) return `${ESTADOS_RV[g].n} (${VIDA_FRENOS[g]})`;
@@ -419,6 +425,11 @@ async function cambiarEstadoRev(estado) {
 }
 
 function botonesHTML(def, it) {
+  // Botones personalizados (configurables): cada uno tiene su texto y su nivel/color
+  if (def.opciones) {
+    return `<div class="rv-botones">${def.opciones.map((o) => `
+      <button type="button" class="rv-b ${ESTADOS_RV[o.g].cls} ${it.op === o.n ? 'activo' : ''}" data-e="${o.g}" data-op="${esc(o.n)}">${esc(o.n)}</button>`).join('')}</div>`;
+  }
   // Fugas: solo Sí / No
   if (def.fugas) {
     return `<div class="rv-botones rv-dos">
@@ -576,7 +587,7 @@ function mensajeDiagnostico(rev) {
     const nota = it.nota ? (p.fluido ? ' · ' : ': ') + it.nota : '';
     if (p.fluido) return `- ${p.n}: ${textoFluido(it)}${nota}`;
     if (p.vida) return `- ${p.n} (vida útil ${VIDA_FRENOS[estadoDe(rev, p.k)]})${nota}`;
-    const det = detallePunto(p, it);
+    const det = [p.opciones && it.op ? it.op : '', detallePunto(p, it)].filter(Boolean).join(' · ');
     return `- ${p.n}${det ? ': ' + det : ''}`;
   };
   ['reemplazo', 'regular'].forEach((e) => {
@@ -601,7 +612,7 @@ function mensajeDiagnostico(rev) {
       if (p.fugas) return 'Sin fugas de fluidos';
       if (p.fluido) return `${p.n} (nivel y estado óptimos)`;
       if (p.vida) return `${p.n} (vida útil ${VIDA_FRENOS.bueno})`;
-      return p.n + (it.medida ? ` (${detallePunto(p, it)})` : '');
+      return p.n + (p.opciones && it.op ? ` (${it.op})` : '') + (it.medida ? ` (${detallePunto(p, it)})` : '');
     }).join(', ') + '.');
   }
   if (rev.observaciones) lineas.push('', `*Observaciones:* ${rev.observaciones}`);
@@ -787,7 +798,10 @@ function initRevisiones() {
     if (btnE) {
       const k = btnE.closest('[data-k]').dataset.k;
       const it = r.items[k] || (r.items[k] = {});
-      it.e = it.e === btnE.dataset.e ? '' : btnE.dataset.e; // tocar de nuevo lo desmarca
+      if (btnE.dataset.op !== undefined) {
+        // Botón personalizado: se guarda el texto elegido y su nivel
+        if (it.op === btnE.dataset.op) { delete it.op; it.e = ''; } else { it.op = btnE.dataset.op; it.e = btnE.dataset.e; }
+      } else it.e = it.e === btnE.dataset.e ? '' : btnE.dataset.e; // tocar de nuevo lo desmarca
       if (!it.e) delete r.items[k];
       rvDirty = true; pintarChecklist(); return;
     }

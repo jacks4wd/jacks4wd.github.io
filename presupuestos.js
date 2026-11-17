@@ -320,6 +320,7 @@ function pintarEditor() {
           </span>
         </div>
         <textarea name="observaciones" rows="5" placeholder="Ej: validez del presupuesto, tiempo de entrega, garantía…">${esc(p.observaciones)}</textarea>
+        <label class="obs-garantia"><input type="checkbox" name="garantia" ${p.sinGarantia ? '' : 'checked'}> Incluir el enlace «Haz clic aquí para verificar nuestra póliza de garantías» <a href="${esc(urlGarantias())}" target="_blank" rel="noopener">(ver póliza)</a></label>
       </div>
     </form>
     <div id="pres-estado-panel"></div>`;
@@ -478,6 +479,7 @@ async function cambiarEstadoSimple(estado) {
 function leerEditor() {
   const f = $('#form-pres'); if (!f || !presEdit) return;
   ['cliente', 'fecha', 'vehiculo', 'telefono', 'direccion', 'observaciones'].forEach((k) => (presEdit[k] = f[k].value.trim()));
+  presEdit.sinGarantia = !f.garantia?.checked;
   presEdit.items = $$('#pres-items tr').map((tr) => {
     const g = (n) => tr.querySelector(`[name="${n}"]`).value;
     const cant = parseDec(g('cant'));
@@ -599,6 +601,7 @@ function docPresHTML(p) {
       <div class="lbl">Observaciones y condiciones</div>
       <div class="obs-texto">${esc(p.observaciones).replace(/\n/g, '<br>')}</div>
     </div>` : ''}
+    ${p.sinGarantia ? '' : `<div class="doc-garantia"><a href="${esc(urlGarantias())}">Haz clic aquí para verificar nuestra póliza de garantías</a><br><small>${esc(urlGarantias())}</small></div>`}
   </div>`;
 }
 
@@ -637,6 +640,7 @@ function mensajePresupuesto(p) {
     `IVA (${Math.round(IVA * 100)}%): $${fmtUSD(t.iva)}`,
     `*Total: $${fmtUSD(t.total)} USD*`,
     ...(p.observaciones ? ['', p.observaciones] : []),
+    ...(p.sinGarantia ? [] : ['', `Consulta nuestra póliza de garantías aquí: ${urlGarantias()}`]),
     '',
     'Quedamos atentos a tu aprobación. ¡Gracias por confiar en nosotros!',
     `— ${CONFIG.taller}`,

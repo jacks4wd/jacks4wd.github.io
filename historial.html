@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Historial del vehículo · JACKS4WD</title>
+<link rel="icon" href="img/icono.png">
+<style>
+  :root { --bg:#f3f4f6; --card:#fff; --text:#1f2937; --muted:#6b7280; --line:#e5e7eb; --primary:#c2410c; --ok:#15803d; --ok-bg:#dcfce7; --warn:#a16207; --warn-bg:#fef9c3; --bad:#b91c1c; --bad-bg:#fee2e2; --blue:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+  header { background: linear-gradient(120deg,#1f2937 0%,#374151 60%,var(--primary) 150%); color:#fff; border-radius:16px; padding:20px; }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .top img { height:40px; filter:brightness(0) invert(1); }
+  .hola { font-size:.95rem; opacity:.85; margin-top:14px; }
+  .veh { font-size:1.6rem; font-weight:800; letter-spacing:-.01em; line-height:1.15; }
+  .placa { display:inline-block; margin-top:8px; background:#fff; color:#111; font-weight:800; letter-spacing:2px; border-radius:6px; padding:2px 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; margin-top:14px; }
+  .card h2 { margin:0 0 6px; font-size:1.05rem; }
+  .prox { display:flex; gap:14px; align-items:center; }
+  .prox .ic { width:46px; height:46px; border-radius:12px; background:var(--warn-bg); display:flex; align-items:center; justify-content:center; font-size:1.4rem; flex:none; }
+  .prox b { font-size:1.15rem; }
+  .muted { color:var(--muted); font-size:.9rem; }
+  .filtros { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+  .filtros button { border:1px solid var(--line); background:#fff; border-radius:999px; padding:6px 14px; font:inherit; font-size:.9rem; cursor:pointer; color:var(--text); }
+  .filtros button.on { background:var(--text); color:#fff; border-color:var(--text); }
+  .linea { position:relative; margin-top:8px; padding-left:22px; }
+  .linea::before { content:""; position:absolute; left:7px; top:6px; bottom:6px; width:2px; background:var(--line); }
+  .ev { position:relative; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:12px; }
+  .ev::before { content:""; position:absolute; left:-20px; top:18px; width:12px; height:12px; border-radius:50%; background:var(--muted); border:2px solid var(--bg); }
+  .ev.aceite::before { background:var(--primary); } .ev.rep::before { background:var(--blue); } .ev.rev::before { background:var(--ok); }
+  .ev .cab { display:flex; justify-content:space-between; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .ev .tipo { font-weight:700; }
+  .ev .fecha { color:var(--muted); font-size:.85rem; }
+  .ev ul { margin:6px 0 0; padding-left:18px; } .ev li { margin:2px 0; }
+  .tag { display:inline-block; border-radius:999px; padding:1px 9px; font-size:.78rem; font-weight:600; }
+  .tag.ok { background:var(--ok-bg); color:var(--ok); } .tag.proc { background:var(--warn-bg); color:var(--warn); }
+  .acciones { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; border-radius:10px; padding:10px 14px; font:inherit; font-weight:600; text-decoration:none; border:1px solid var(--line); background:#fff; color:var(--text); }
+  .btn.wa { background:#16a34a; border-color:#16a34a; color:#fff; }
+  .estado { text-align:center; padding:50px 16px; color:var(--muted); }
+  footer { text-align:center; color:var(--muted); font-size:.85rem; padding:22px 0 30px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="estado">Cargando historial…</div></div>
+
+<script src="nube-config.js"></script>
+<script>
+(() => {
+  const TALLER = { nombre: 'JACKS4WD', wa: '584142333535', direccion: 'C.C.C.T. Sótano 1', telefono: '0414-2333535' };
+  const MESES_ACEITE = 3;
+  const app = document.getElementById('app');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+  const fecha = (iso) => { if (!FECHA.test(iso || '')) return ''; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' }); };
+  const km = (n) => (Number.isFinite(Number(n)) && n !== null && n !== '' ? Number(n).toLocaleString('es-VE') + ' km' : '');
+  const num = (n) => '#' + String(Number(n) || 0).padStart(4, '0');
+  const sumarMeses = (iso, m) => { const [y, mo, d] = iso.split('-').map(Number); const f = new Date(y, mo - 1 + m, d); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`; };
+  const mensaje = (t) => { app.innerHTML = `<header><div class="top"><strong>${TALLER.nombre}</strong><img src="img/logo.png" alt=""></div></header><div class="card estado">${t}</div>${pie()}`; };
+  const pie = () => `<div class="acciones"><a class="btn wa" href="https://wa.me/${TALLER.wa}" target="_blank" rel="noopener">Escribir al taller por WhatsApp</a><a class="btn" href="garantias.html">Póliza de garantías</a></div>
+    <footer><strong>${TALLER.nombre}</strong> · ${TALLER.direccion} · Telf: ${TALLER.telefono}</footer>`;
+
+  const token = (location.hash.slice(1) || new URLSearchParams(location.search).get('t') || '').trim();
+  const cfg = typeof NUBE_CONFIG !== 'undefined' ? NUBE_CONFIG : null;
+  if (!/^[A-Za-z0-9]{24,64}$/.test(token)) return mensaje('Este enlace no es válido. Pide al taller tu enlace personal.');
+  if (!cfg || !cfg.url || !cfg.clave) return mensaje('El historial no está disponible en este momento.');
+
+  fetch(`${cfg.url}/rest/v1/rpc/historial_vehiculo`, {
+    method: 'POST', headers: { apikey: cfg.clave, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_token: token }),
+  }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+    .then((d) => (d && d.vehiculo ? pintar(d) : mensaje('Este enlace ya no está activo. Pide al taller tu enlace personal actualizado.')))
+    .catch(() => mensaje('No se pudo cargar el historial. Revisa tu conexión e intenta de nuevo.'));
+
+  function pintar(d) {
+    const v = d.vehiculo || {};
+    const serv = Array.isArray(d.servicios) ? d.servicios : [];
+    const reps = Array.isArray(d.reparaciones) ? d.reparaciones : [];
+    const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+    const ult = serv.find((s) => FECHA.test(s.fecha || ''));
+    const eventos = [
+      ...serv.map((s) => ({ f: s.fecha, cls: 'aceite', grupo: 'aceite', html: `
+        <div class="cab"><span class="tipo">Cambio de aceite</span><span class="fecha">${fecha(s.fecha)}</span></div>
+        <div>${km(s.km) ? `Kilometraje: <b>${km(s.km)}</b>` : ''}${km(s.proximoKm) ? ` · Próximo: <b>${km(s.proximoKm)}</b>` : ''}</div>
+        ${s.aceite ? `<div class="muted">Aceite: ${esc(s.aceite)}</div>` : ''}
+        ${s.filtro ? `<div class="muted">Filtro: ${esc(s.filtro)}</div>` : ''}
+        ${s.revisiones ? `<div class="muted">Revisado: ${esc(s.revisiones)}</div>` : ''}` })),
+      ...reps.map((r) => ({ f: r.fechaCierre || r.fecha, cls: 'rep', grupo: 'rep', html: `
+        <div class="cab"><span class="tipo">${r.tipo === 'modificacion' ? 'Modificación' : 'Reparación'} ${num(r.numero)}</span><span class="fecha">${fecha(r.fechaCierre || r.fecha)}</span></div>
+        <div>${r.estado === 'culminado' ? '<span class="tag ok">Entregado</span>' : '<span class="tag proc">En proceso</span>'}${r.notaEntrega ? ` <span class="muted">· Nota de entrega ${esc(r.notaEntrega)}</span>` : ''}</div>
+        ${(r.items || []).length ? `<ul>${r.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}` })),
+      ...revs.map((x) => ({ f: x.fecha, cls: 'rev', grupo: 'rev', html: `
+        <div class="cab"><span class="tipo">${x.tipo === 'completa' ? 'Revisión completa' : 'Revisión básica'} ${num(x.numero)}</span><span class="fecha">${fecha(x.fecha)}</span></div>
+        ${km(x.km) ? `<div class="muted">Kilometraje: ${km(x.km)}</div>` : ''}` })),
+    ].filter((e) => FECHA.test(e.f || '')).sort((a, b) => b.f.localeCompare(a.f));
+
+    app.innerHTML = `
+      <header>
+        <div class="top"><strong>${TALLER.nombre}</strong><img src="img/logo.png" alt=""></div>
+        <div class="hola">${d.cliente ? `Hola, ${esc(d.cliente)}. Este es el historial de tu vehículo` : 'Historial del vehículo'}</div>
+        <div class="veh">${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''}</div>
+        ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : ''}
+      </header>
+      ${ult ? `<div class="card"><div class="prox"><div class="ic">🛢️</div><div>
+        <div class="muted">Próximo cambio de aceite</div>
+        <b>${km(ult.proximoKm) || 'Según kilometraje'}</b> <span class="muted">o el ${fecha(sumarMeses(ult.fecha, MESES_ACEITE))}, lo que ocurra primero</span>
+      </div></div></div>` : ''}
+      <div class="filtros">
+        <button class="on" data-f="">Todo (${eventos.length})</button>
+        <button data-f="aceite">Aceite (${serv.length})</button>
+        <button data-f="rep">Reparaciones (${reps.length})</button>
+        <button data-f="rev">Revisiones (${revs.length})</button>
+      </div>
+      <div class="linea" id="linea">${eventos.map((e) => `<div class="ev ${e.cls}" data-g="${e.grupo}">${e.html}</div>`).join('') || '<div class="card estado">Aún no hay servicios registrados.</div>'}</div>
+      ${pie()}`;
+    app.querySelector('.filtros').onclick = (e) => {
+      const b = e.target.closest('[data-f]'); if (!b) return;
+      app.querySelectorAll('.filtros button').forEach((x) => x.classList.toggle('on', x === b));
+      app.querySelectorAll('.ev').forEach((x) => (x.hidden = !!b.dataset.f && x.dataset.g !== b.dataset.f));
+    };
+  }
+  window.addEventListener('hashchange', () => location.reload());
+})();
+</script>
+</body>
+</html>

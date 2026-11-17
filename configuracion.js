@@ -32,6 +32,12 @@ function abrirConfiguracion() {
 
 // ===================== PUNTOS DE REVISIÓN =====================
 function extraItemHTML(it) {
+  if (it.tipo === 'botones') {
+    const juegos = cfgEdit.botones || [];
+    if (!juegos.length) return '<small class="hint">Primero crea un juego en <strong>Botones personalizados</strong> (arriba).</small>';
+    return `<label class="cfg-juego-sel"><small class="hint">Juego de botones:</small>
+      <select data-campo="juego">${juegos.map((j) => `<option value="${j.id}" ${j.id === it.juego ? 'selected' : ''}>${esc(j.n || 'Sin nombre')} (${j.op.map((o) => esc(o.n)).join(' / ')})</option>`).join('')}</select></label>`;
+  }
   if (it.tipo === 'traseras') return `<input data-campo="nTras" value="${esc(it.nTras || '')}" placeholder="Nombre del punto trasero (ej: Barras link traseras)">`;
   if (it.tipo === 'medida') return `<input data-campo="medida" value="${esc(it.medida || '')}" placeholder="Texto del campo de medida (ej: Valor medido (psi))">
     <input data-campo="naTexto" value="${esc(it.naTexto || '')}" placeholder="Texto del botón N/A (opcional, ej: No es posible medir)">`;
@@ -86,8 +92,33 @@ function pintarCfgPuntos() {
         <button type="button" class="btn primary" data-cfg="guardar">${cfgDirty ? 'Guardar cambios •' : 'Guardar cambios'}</button>
       </div>
     </div>
+    ${juegosHTML()}
     ${bloque('basica')}
     ${bloque('completa')}`;
+}
+
+// Juegos de botones personalizados (ej: "Sí / No", "Bien / Desgastado / Roto")
+const NIVELES_BOTON = { reemplazo: 'Rojo · Reemplazo inmediato', regular: 'Amarillo · Estado regular', bueno: 'Verde · Buen estado', na: 'Gris · No aplica' };
+function juegosHTML() {
+  const juegos = cfgEdit.botones || (cfgEdit.botones = []);
+  return `<div class="card cfg-juegos">
+    <h3 style="margin-top:0">Botones personalizados</h3>
+    <p class="hint">Crea tus propios juegos de botones y úsalos en cualquier punto (tipo <strong>"Botones personalizados"</strong>). El <strong>color</strong> de cada botón indica en qué grupo del diagnóstico aparece: rojo = reemplazo inmediato, amarillo = regular, verde = buen estado, gris = no aplica.</p>
+    ${juegos.map((j, x) => `<div class="cfg-juego" data-jb="${x}">
+      <div class="cfg-sec-cab">
+        <input data-jcampo="n" value="${esc(j.n)}" placeholder="Nombre del juego (ej: Sí / No)">
+        <button type="button" class="btn tiny danger" data-cfg="borrar-juego">Eliminar juego</button>
+      </div>
+      ${j.op.map((o, y) => `<div class="cfg-op" data-op="${y}">
+        <span class="rv-b ${ESTADOS_RV[o.g].cls} activo cfg-op-muestra">${esc(o.n || 'Botón')}</span>
+        <input data-jcampo="opn" value="${esc(o.n)}" placeholder="Texto del botón" maxlength="40">
+        <select data-jcampo="opg">${Object.entries(NIVELES_BOTON).map(([k, n]) => `<option value="${k}" ${o.g === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <button type="button" class="btn tiny ghost" data-cfg="borrar-op" title="Quitar botón">✕</button>
+      </div>`).join('')}
+      ${j.op.length < 8 ? '<button type="button" class="btn tiny ghost" data-cfg="agregar-op">+ Agregar botón</button>' : ''}
+    </div>`).join('')}
+    <button type="button" class="btn small ghost" data-cfg="agregar-juego">+ Crear juego de botones</button>
+  </div>`;
 }
 
 function marcarCfg() {
@@ -110,6 +141,15 @@ async function guardarCfgPuntos() {
         }
       }
     }
+  }
+  for (const j of cfgEdit.botones || []) {
+    j.n = (j.n || '').trim();
+    j.op = j.op.map((o) => ({ ...o, n: (o.n || '').trim() })).filter((o) => o.n);
+    if (!j.n) j.n = j.op.map((o) => o.n).join(' / ');
+    if (j.op.length < 2) { alert(`El juego de botones "${j.n || 'sin nombre'}" necesita al menos 2 botones con texto.`); return; }
+  }
+  for (const g of ['basica', 'completa']) for (const sec of cfgEdit[g]) for (const it of sec.items) {
+    if (it.tipo === 'botones' && !(cfgEdit.botones || []).some((j) => j.id === it.juego)) { alert(`Elige un juego de botones para "${it.n}".`); return; }
   }
   if (!cfgEdit.basica.some((s) => s.items.length)) { alert('La revisión básica debe tener al menos un punto.'); return; }
   db.config.revision = limpiarEstructura(copiar(cfgEdit));
@@ -333,6 +373,15 @@ function initConfiguracion() {
 
   const p = $('#cfg-puntos');
   p.addEventListener('input', (e) => {
+    const jc = e.target.dataset.jcampo;
+    if (jc === 'n' || jc === 'opn') {
+      const j = cfgEdit.botones[Number(e.target.closest('[data-jb]').dataset.jb)];
+      if (jc === 'n') j.n = e.target.value;
+      else { const o = j.op[Number(e.target.closest('[data-op]').dataset.op)]; o.n = e.target.value; const m = e.target.parentElement.querySelector('.cfg-op-muestra'); if (m) m.textContent = o.n || 'Botón'; }
+      marcarCfg();
+    }
+  });
+  p.addEventListener('input', (e) => {
     const t = e.target; const campo = t.dataset.campo; if (!campo || campo === 'tipo') return;
     const g = t.closest('[data-g]')?.dataset.g; const s = Number(t.closest('[data-s]')?.dataset.s);
     const sec = cfgEdit[g][s];
@@ -345,12 +394,22 @@ function initConfiguracion() {
     marcarCfg();
   });
   p.addEventListener('change', (e) => {
-    const t = e.target; if (t.dataset.campo !== 'tipo') return;
+    const t = e.target;
+    if (t.dataset.jcampo === 'opg') {
+      const j = cfgEdit.botones[Number(t.closest('[data-jb]').dataset.jb)];
+      j.op[Number(t.closest('[data-op]').dataset.op)].g = t.value; marcarCfg(); pintarCfgPuntos(); return;
+    }
+    if (t.dataset.campo === 'juego') {
+      const g = t.closest('[data-g]').dataset.g; const s = Number(t.closest('[data-s]').dataset.s);
+      cfgEdit[g][s].items[Number(t.closest('[data-i]').dataset.i)].juego = t.value; marcarCfg(); return;
+    }
+    if (t.dataset.campo !== 'tipo') return;
     const g = t.closest('[data-g]').dataset.g; const s = Number(t.closest('[data-s]').dataset.s);
     const it = cfgEdit[g][s].items[Number(t.closest('[data-i]').dataset.i)];
     it.tipo = t.value;
     if (it.tipo === 'traseras' && !it.kTras) { it.kTras = it.k + '_tras'; it.nTras = it.nTras || ''; }
     if ((it.tipo === 'fugas' || it.tipo === 'fluidos') && !(it.sub || []).length) it.sub = [{ k: claveNueva('s'), n: '' }];
+    if (it.tipo === 'botones' && !(cfgEdit.botones || []).some((j) => j.id === it.juego)) it.juego = cfgEdit.botones?.[0]?.id || '';
     marcarCfg(); pintarCfgPuntos();
   });
   p.addEventListener('click', async (e) => {
@@ -365,7 +424,7 @@ function initConfiguracion() {
       case 'guardar': await guardarCfgPuntos(); return;
       case 'restaurar':
         if (!await confirmar('¿Volver a los puntos de revisión originales? Se perderán los cambios hechos en esta lista.')) return;
-        cfgEdit = copiar(CONFIG_REVISION_INICIAL); break;
+        cfgEdit = { ...copiar(CONFIG_REVISION_INICIAL), botones: cfgEdit.botones || [] }; break;
       case 'agregar-sec': secs.push({ t: 'Nueva sección', items: [{ k: claveNueva('p'), n: '', tipo: 'normal' }] }); break;
       case 'subir-sec': mover(secs, s, -1); break;
       case 'bajar-sec': mover(secs, s, 1); break;
@@ -380,11 +439,23 @@ function initConfiguracion() {
         secs[s].items.splice(i, 1); break;
       case 'agregar-sub': secs[s].items[i].sub.push({ k: claveNueva('s'), n: '' }); break;
       case 'borrar-sub': secs[s].items[i].sub.splice(Number(b.closest('[data-sub]').dataset.sub), 1); break;
+      case 'agregar-juego':
+        (cfgEdit.botones = cfgEdit.botones || []).push({ id: claveNueva('jb'), n: '', op: [{ n: 'Sí', g: 'reemplazo' }, { n: 'No', g: 'bueno' }] }); break;
+      case 'borrar-juego': {
+        const jb = Number(b.closest('[data-jb]').dataset.jb); const j = cfgEdit.botones[jb];
+        const usan = ['basica', 'completa'].flatMap((gg) => cfgEdit[gg].flatMap((sec) => sec.items)).filter((it) => it.tipo === 'botones' && it.juego === j.id);
+        if (!await confirmar(`¿Eliminar el juego "${j.n || 'sin nombre'}"?${usan.length ? `
+${usan.length} punto(s) que lo usan volverán a los 4 botones normales.` : ''}`)) return;
+        usan.forEach((it) => { it.tipo = 'normal'; delete it.juego; });
+        cfgEdit.botones.splice(jb, 1); break;
+      }
+      case 'agregar-op': cfgEdit.botones[Number(b.closest('[data-jb]').dataset.jb)].op.push({ n: '', g: 'bueno' }); break;
+      case 'borrar-op': cfgEdit.botones[Number(b.closest('[data-jb]').dataset.jb)].op.splice(Number(b.closest('[data-op]').dataset.op), 1); break;
       default: return;
     }
     marcarCfg(); pintarCfgPuntos();
     // Al agregar algo, poner el cursor en el campo nuevo (el último vacío)
-    if (accion.startsWith('agregar')) $$('#cfg-puntos input[data-campo="n"], #cfg-puntos input[data-campo="subn"]').filter((x) => !x.value).at(-1)?.focus();
+    if (accion.startsWith('agregar')) $$('#cfg-puntos input[data-campo="n"], #cfg-puntos input[data-campo="subn"], #cfg-puntos input[data-jcampo]').filter((x) => !x.value).at(-1)?.focus();
   });
 
   const t = $('#cfg-tecnicos');

@@ -123,7 +123,8 @@ function vacio() {
 // Estructura de puntos de revisión: solo claves seguras y tipos conocidos
 function limpiarEstructura(e) {
   const CLAVE = /^[a-z0-9_]{1,40}$/;
-  const TIPOS = ['normal', 'vida', 'medida', 'traseras', 'fugas', 'fluidos'];
+  const TIPOS = ['normal', 'vida', 'medida', 'traseras', 'fugas', 'fluidos', 'botones'];
+  const NIVELES = ['reemplazo', 'regular', 'bueno', 'na'];
   const txt = (v, max = 120) => String(v ?? '').slice(0, max);
   const vistos = new Set();
   const secciones = (lista) => (Array.isArray(lista) ? lista : []).filter((s) => s && typeof s === 'object').map((s) => ({
@@ -134,10 +135,16 @@ function limpiarEstructura(e) {
       if (it.naTexto) out.naTexto = txt(it.naTexto, 40);
       if (out.tipo === 'traseras') { out.kTras = CLAVE.test(it.kTras) ? it.kTras : it.k + '_tras'; out.nTras = txt(it.nTras); }
       if (out.tipo === 'fugas' || out.tipo === 'fluidos') out.sub = (Array.isArray(it.sub) ? it.sub : []).filter((x) => x && CLAVE.test(x.k)).map((x) => ({ k: x.k, n: txt(x.n) }));
+      if (out.tipo === 'botones') out.juego = CLAVE.test(it.juego) ? it.juego : '';
       return out;
     }),
   }));
-  return { basica: secciones(e?.basica), completa: secciones(e?.completa) };
+  // Juegos de botones personalizados: cada botón tiene un texto y un nivel (color/grupo del diagnóstico)
+  const juegos = (Array.isArray(e?.botones) ? e.botones : []).filter((j) => j && CLAVE.test(j.id)).slice(0, 50).map((j) => ({
+    id: j.id, n: txt(j.n, 60),
+    op: (Array.isArray(j.op) ? j.op : []).filter((o) => o && NIVELES.includes(o.g)).slice(0, 8).map((o) => ({ n: txt(o.n, 40), g: o.g })),
+  }));
+  return { basica: secciones(e?.basica), completa: secciones(e?.completa), botones: juegos };
 }
 
 // ===================== VALIDACIÓN DE DATOS =====================
@@ -157,7 +164,11 @@ function normalizarDatos(data) {
   const todos = [...d.clientes, ...d.vehiculos, ...d.servicios, ...d.citas, ...d.mensajes, ...d.aceites, ...d.presupuestos, ...d.revisiones, ...d.reparaciones, ...d.ingresos];
   todos.forEach((x) => { if (!id(x.id)) x.id = nuevoId(); });
 
-  d.vehiculos.forEach((v) => { v.clienteId = id(v.clienteId); });
+  d.vehiculos.forEach((v) => {
+    v.clienteId = id(v.clienteId);
+    // Clave del enlace público del historial (letras y números, difícil de adivinar)
+    if (v.token !== undefined && !(typeof v.token === 'string' && /^[A-Za-z0-9]{24,64}$/.test(v.token))) delete v.token;
+  });
   d.servicios.forEach((s) => {
     s.vehiculoId = id(s.vehiculoId); s.aceiteId = id(s.aceiteId) || '';
     s.fecha = fecha(s.fecha) || hoyISO(); s.recordatorioEnviado = fecha(s.recordatorioEnviado);
@@ -216,6 +227,7 @@ function normalizarDatos(data) {
       const limpio = { e, nota: String(it.nota || ''), medida: String(it.medida || '') };
       if (nivel) limpio.nivel = nivel;
       if (estadoF) limpio.estadoF = estadoF;
+      if (e && it.op) limpio.op = String(it.op).slice(0, 40); // texto del botón personalizado
       if (it.fugas && typeof it.fugas === 'object') { limpio.fugas = {}; Object.entries(it.fugas).forEach(([f, l]) => { if (CLAVE.test(f)) limpio.fugas[f] = String(l || ''); }); }
       items[k] = limpio;
     });
@@ -280,6 +292,7 @@ const soloDigitos = (s) => String(s ?? '').replace(/\D/g, '');
 function hoyISO() { return isoDe(new Date()); }
 function isoDe(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function parseISO(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function sumarDias(iso, n) { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function fmtFecha(s) { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
 function sumarMeses(iso, n) {
   const d = parseISO(iso); const dia = d.getDate();
@@ -1046,6 +1059,7 @@ function verDetalle(vid) {
       <button class="btn small wa" data-act="mensaje" data-vid="${v.id}">Enviar mensaje</button>
       <button class="btn small ghost" data-act="pdf-servicios" data-vid="${v.id}">⬇ PDF</button>
       <button class="btn small ghost" data-act="editar-cv" data-vid="${v.id}">Editar cliente / vehículo</button>
+      <button class="btn small ghost solo-admin" data-act="enlace" data-vid="${v.id}">${v.token ? 'Enlace / QR del cliente' : 'Crear enlace / QR del cliente'}</button>
     </div>
     <div class="historial">
       <h4>Historial de cambios de aceite (${hist.length})</h4>
@@ -1198,6 +1212,65 @@ function renderRecordatorios() {
   $('#lista-reparaciones-rec').innerHTML = reps.map(tarjetaRecReparacion).join('') || '<p class="vacio">No hay seguimientos de reparaciones pendientes.</p>';
   const total = pendientes.length + reps.length;
   const b = $('#badge-recordatorios'); b.textContent = total; b.hidden = !total;
+}
+
+// ===================== INICIO (resumen decorativo) =====================
+function renderInicio() {
+  const cont = $('#tab-inicio'); if (!cont) return;
+  const hoy = hoyISO();
+  const hora = new Date().getHours();
+  const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const limite = sumarDias(hoy, 7);
+  const citas = db.citas.filter((c) => c.estado === 'pendiente' && c.fecha >= hoy && c.fecha <= limite)
+    .sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')));
+  const citasHoy = citas.filter((c) => c.fecha === hoy).length;
+  const recs = candidatosRecordatorio().filter((x) => (x.e.clave === 'vencido' && !x.s.recordatorioEnviado) || (x.e.clave !== 'vencido' && x.e.dias <= 30))
+    .sort((a, b) => a.e.vence.localeCompare(b.e.vence));
+  const recsPend = recs.filter((x) => x.e.clave === 'vencido').length;
+  const segRep = candidatosReparacion().filter((x) => !x.enviado && x.vence <= hoy).length;
+  const repProceso = (db.reparaciones || []).filter((r) => r.estado === 'en_proceso' && !(db.reparaciones || []).some((x) => x.reemplazaA === r.id)).length;
+  const revAbiertas = (db.revisiones || []).filter((r) => r.estado === 'abierta' && r.numero).length;
+  const mes = (iso) => parseISO(iso).toLocaleDateString('es-VE', { month: 'short' }).replace('.', '');
+  const dia = (iso) => parseISO(iso).getDate();
+  const cuando = (iso) => (iso === hoy ? 'Hoy' : iso === sumarDias(hoy, 1) ? 'Mañana' : (() => { const t = parseISO(iso).toLocaleDateString('es-VE', { weekday: 'long' }); return t.charAt(0).toUpperCase() + t.slice(1); })());
+  const tile = (n, t, cls, tab) => `<button type="button" class="ini-tile ${cls}" data-ini="${tab}"><strong>${n}</strong><span>${t}</span></button>`;
+  const admin = !document.body.classList.contains('rol-taller');
+  cont.innerHTML = `
+    <div class="card ini-hero">
+      <div>
+        <div class="ini-saludo">${saludo}</div>
+        <div class="ini-fecha">${esc(fechaLarga(hoy))}</div>
+      </div>
+      <img src="img/logo.png" alt="" class="ini-logo">
+    </div>
+    <div class="ini-tiles">
+      ${tile(citasHoy, citasHoy === 1 ? 'cita hoy' : 'citas hoy', 'azul', 'citas')}
+      ${admin ? tile(recsPend + segRep, 'recordatorios pendientes', recsPend + segRep ? 'rojo' : 'verde', 'recordatorios') : ''}
+      ${tile(repProceso, repProceso === 1 ? 'reparación en proceso' : 'reparaciones en proceso', 'naranja', 'presupuestos')}
+      ${tile(revAbiertas, revAbiertas === 1 ? 'revisión abierta' : 'revisiones abiertas', 'gris', 'revisiones')}
+    </div>
+    <div class="ini-cols">
+      <div class="card">
+        <h3 class="ini-tit">Próximas citas <small>(7 días)</small></h3>
+        ${citas.slice(0, 6).map((ct) => { const t = tituloCita(ct); return `
+          <div class="ini-fila">
+            <div class="ini-dia"><b>${dia(ct.fecha)}</b><span>${mes(ct.fecha)}</span></div>
+            <div class="ini-info"><strong>${esc(t.nombre)}</strong><small>${esc(motivoCita(ct) || '')}${t.veh ? ' · ' + esc(t.veh) : ''}</small></div>
+            <div class="ini-cuando">${cuando(ct.fecha)}${ct.hora ? '<br>' + esc(fmtHora12(ct.hora)) : ''}</div>
+          </div>`; }).join('') || '<p class="vacio">No hay citas en los próximos 7 días.</p>'}
+        ${citas.length > 6 ? `<p class="hint">y ${citas.length - 6} más…</p>` : ''}
+      </div>
+      <div class="card">
+        <h3 class="ini-tit">Próximos cambios de aceite</h3>
+        ${recs.slice(0, 6).map(({ v, c, e }) => `
+          <div class="ini-fila">
+            <div class="ini-dia ${e.clave}"><b>${dia(e.vence)}</b><span>${mes(e.vence)}</span></div>
+            <div class="ini-info"><strong>${esc(c.nombre)}</strong><small>${esc(v.marca)} ${esc(v.modelo)} · ${esc(v.placa)}</small></div>
+            <div class="ini-cuando"><span class="estado ${e.clave}">${e.clave === 'vencido' ? 'Vencido' : `En ${e.dias} d`}</span></div>
+          </div>`).join('') || '<p class="vacio">Nada pendiente en los próximos 30 días.</p>'}
+        ${segRep && admin ? `<p class="hint" style="margin-bottom:0">Además hay ${segRep} seguimiento(s) de reparación pendiente(s).</p>` : ''}
+      </div>
+    </div>`;
 }
 
 // ---------- Recordatorio de seguimiento 6 meses después de la última reparación ----------
@@ -1578,6 +1651,7 @@ function renderTodo() {
   renderRecordatorios();
   renderCalendario();
   renderCatalogo();
+  renderInicio();
   if (typeof renderPresupuestos === 'function') renderPresupuestos(); // definido en presupuestos.js
   if (typeof renderRevisiones === 'function') renderRevisiones(); // definido en revisiones.js
   if (typeof renderReparaciones === 'function') renderReparaciones(); // definido en reparaciones.js
@@ -1595,6 +1669,7 @@ function init() {
   // salvo que haya cambios sin guardar en lo que se estaba editando.
   $$('.tab').forEach((b) => (b.onclick = () => {
     irA(b.dataset.tab);
+    if (b.dataset.tab === 'inicio') renderInicio();
     if (b.dataset.tab === 'servicios' && !svDirty) { limpiarFormulario(); irSubtabSv('historial'); }
     if (b.dataset.tab === 'revisiones' && typeof reiniciarVistaRevisiones === 'function') reiniciarVistaRevisiones();
     if (b.dataset.tab === 'presupuestos' && typeof reiniciarVistaPresupuestos === 'function') reiniciarVistaPresupuestos();
@@ -1615,6 +1690,12 @@ function init() {
     const b = e.target.closest('[data-sv]'); if (!b) return;
     if (b.dataset.sv === 'otro-vehiculo') otroVehiculo();
     if (b.dataset.sv === 'cambiar') limpiarClienteSv();
+  };
+  $('#tab-inicio').onclick = (e) => {
+    const t = e.target.closest('[data-ini]'); if (!t) return;
+    const tab = t.dataset.ini;
+    $(`.tab[data-tab="${tab}"]`)?.click();
+    if (tab === 'presupuestos' && typeof irSubtabPres === 'function') irSubtabPres('reparaciones');
   };
   $('#btn-nuevo-sv').onclick = () => nuevoCambioAceite();
   $('#btn-volver-sv').onclick = volverListaSv;
@@ -1650,6 +1731,7 @@ function init() {
       case 'nuevo-cambio': cerrarModal(); nuevoCambioAceite(vid); break;
       case 'agendar': agendarDesdeVehiculo(vid); break;
       case 'editar-cv': editarClienteVehiculo(vid); break;
+      case 'enlace': abrirEnlaceCliente(vid); break;
       case 'mensaje': formMensaje(vid); break;
       case 'pdf-servicios': pdfServicios(vid); break;
       case 'enviar-rep':
@@ -1725,3 +1807,119 @@ function init() {
 }
 
 init();
+
+// Dirección pública de la app (para enlaces que se comparten con los clientes)
+function urlPublica() {
+  const u = (typeof NUBE_CONFIG !== 'undefined' && NUBE_CONFIG.urlPublica) || 'https://marquesdanny97-lang.github.io/jacks4wd-app/';
+  return u.endsWith('/') ? u : u + '/';
+}
+const urlGarantias = () => urlPublica() + 'garantias.html';
+
+// ===================== ENLACE PÚBLICO DEL HISTORIAL (QR / NFC) =====================
+// Cada vehículo puede tener una clave larga y aleatoria (v.token). El enlace
+// historial.html#<clave> muestra SOLO el historial de ese vehículo, sin acceso al sistema.
+// La clave va después de "#" para que no viaje al servidor de la página ni quede en sus registros.
+const QR_LIB = {
+  src: 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js',
+  sri: 'sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==',
+};
+function cargarQR() {
+  if (window.qrcode) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = QR_LIB.src; s.integrity = QR_LIB.sri; s.crossOrigin = 'anonymous'; s.referrerPolicy = 'no-referrer';
+    s.onload = () => res(); s.onerror = () => rej(new Error('No se pudo cargar el generador de QR. Revisa la conexión a internet.'));
+    document.head.appendChild(s);
+  });
+}
+function nuevoToken() {
+  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const out = [];
+  while (out.length < 32) { for (const x of crypto.getRandomValues(new Uint8Array(48))) if (x < 248 && out.length < 32) out.push(a[x % 62]); }
+  return out.join('');
+}
+const urlHistorial = (v) => urlPublica() + 'historial.html#' + v.token;
+function crearQR(texto) { const q = qrcode(0, 'M'); q.addData(texto); q.make(); return q; }
+function qrPNG(q, escala = 12, margen = 4) {
+  const n = q.getModuleCount(); const lado = (n + margen * 2) * escala;
+  const c = document.createElement('canvas'); c.width = c.height = lado;
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, lado, lado); ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) ctx.fillRect((k + margen) * escala, (r + margen) * escala, escala, escala);
+  return c.toDataURL('image/png');
+}
+
+async function abrirEnlaceCliente(vid) {
+  const v = vehiculo(vid); if (!v) return;
+  const c = cliente(v.clienteId) || { nombre: '', telefono: '' };
+  const url = v.token ? urlHistorial(v) : '';
+  abrirModal(`
+    <div id="enlace-cont">
+      <div class="form-head"><h3>Historial del cliente</h3><button class="btn small ghost" data-act="ver" data-vid="${v.id}">← Volver</button></div>
+      <p class="hint">Enlace <strong>personal y privado</strong> para que ${esc(c.nombre)} vea el historial de servicios y reparaciones de su <strong>${esc(v.marca)} ${esc(v.modelo)} (${esc(v.placa)})</strong>, sin acceso al resto del sistema. Puedes grabarlo en un sticker NFC o imprimir el código QR.</p>
+      ${!MODO_NUBE ? '<p class="hint" style="color:var(--bad)">El enlace muestra los datos guardados en la nube; en modo local no tendrá información.</p>' : ''}
+      ${v.token ? `
+        <div class="enlace-box">
+          <div id="qr-box" class="qr-box">Generando QR…</div>
+          <div class="enlace-datos">
+            <label>Enlace<input id="enlace-url" readonly value="${esc(url)}"></label>
+            <div class="enlace-botones">
+              <button type="button" class="btn small primary" data-enl="copiar">Copiar enlace</button>
+              <a class="btn small ghost" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a>
+              <button type="button" class="btn small wa" data-enl="wa">Enviar por WhatsApp</button>
+              <button type="button" class="btn small ghost" data-enl="png">Descargar QR</button>
+              <button type="button" class="btn small ghost" data-enl="imprimir">Imprimir sticker</button>
+            </div>
+            <p class="hint"><strong>Sticker NFC:</strong> con la app gratuita <em>NFC Tools</em> (Android o iPhone) elige Escribir → Agregar registro → URL y pega este enlace.</p>
+            <div class="enlace-botones" style="border-top:1px solid var(--line);padding-top:10px">
+              <button type="button" class="btn tiny ghost" data-enl="regenerar">Cambiar enlace (el anterior deja de funcionar)</button>
+              <button type="button" class="btn tiny danger" data-enl="desactivar">Desactivar enlace</button>
+            </div>
+          </div>
+        </div>` : `
+        <button type="button" class="btn primary" data-enl="generar">Crear enlace personal</button>`}
+    </div>`);
+  $('#enlace-cont').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-enl]'); if (!b) return;
+    const g = db.vehiculos.find((x) => x.id === vid); if (!g) return;
+    switch (b.dataset.enl) {
+      case 'generar':
+      case 'regenerar':
+        if (b.dataset.enl === 'regenerar' && !await confirmar('¿Cambiar el enlace? El enlace, QR o sticker NFC anterior dejará de funcionar y tendrás que entregar uno nuevo.', { si: 'Cambiar enlace', peligro: true })) return;
+        g.token = nuevoToken(); g.actualizado = new Date().toISOString();
+        await guardar(); toast('Enlace creado'); abrirEnlaceCliente(vid); return;
+      case 'desactivar':
+        if (!await confirmar('¿Desactivar el enlace? El QR o sticker actual dejará de mostrar el historial.', { si: 'Desactivar', peligro: true })) return;
+        delete g.token; g.actualizado = new Date().toISOString();
+        await guardar(); toast('Enlace desactivado'); abrirEnlaceCliente(vid); return;
+      case 'copiar':
+        try { await navigator.clipboard.writeText(urlHistorial(g)); toast('Enlace copiado'); }
+        catch { $('#enlace-url').select(); document.execCommand('copy'); toast('Enlace copiado'); }
+        return;
+      case 'wa': {
+        const nombre = (c.nombre || '').split(' ')[0];
+        abrirWhatsApp(c.telefono, `Hola${nombre ? ' ' + nombre : ''}, este es el enlace personal para ver el historial de servicios y reparaciones de tu ${v.marca} ${v.modelo} (${v.placa}) en ${CONFIG.taller}:\n${urlHistorial(g)}\n\nGuárdalo; es solo para ti.`);
+        return;
+      }
+      case 'png': {
+        await cargarQR();
+        const a = document.createElement('a'); a.href = qrPNG(crearQR(urlHistorial(g))); a.download = `QR historial ${v.placa}.png`; a.click();
+        return;
+      }
+      case 'imprimir': {
+        await cargarQR();
+        const img = qrPNG(crearQR(urlHistorial(g)), 10, 2);
+        imprimirDocumento(`<div class="sticker-qr">
+          <img src="img/logo.png" alt="" class="sticker-logo">
+          <img src="${img}" alt="QR" class="sticker-img">
+          <div class="sticker-txt">Escanea para ver el historial de tu vehículo</div>
+          <div class="sticker-placa">${esc(v.placa)}</div>
+        </div>`, `Sticker QR ${v.placa}`);
+        return;
+      }
+    }
+  });
+  if (v.token) {
+    try { await cargarQR(); const box = $('#qr-box'); if (box) box.innerHTML = `<img src="${qrPNG(crearQR(url), 6, 2)}" alt="Código QR del historial">`; }
+    catch (err) { const box = $('#qr-box'); if (box) box.textContent = err.message; }
+  }
+}

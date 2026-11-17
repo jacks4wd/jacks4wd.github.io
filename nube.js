@@ -250,6 +250,7 @@ const Nube = (() => {
     // Si el taller estaba en una pestaña restringida, volver al inicio
     const activa = $('.tab.active')?.dataset.tab;
     if (!esAdmin() && ['recordatorios', 'config'].includes(activa)) irA('registros');
+    if (typeof renderInicio === 'function') renderInicio();
   }
 
   function prepararCabecera() {
