@@ -1731,7 +1731,7 @@ function init() {
       case 'nuevo-cambio': cerrarModal(); nuevoCambioAceite(vid); break;
       case 'agendar': agendarDesdeVehiculo(vid); break;
       case 'editar-cv': editarClienteVehiculo(vid); break;
-      case 'enlace': abrirEnlaceCliente(vid); break;
+      case 'enlace': abrirEnlaceCliente(vid, 'servicios'); break;
       case 'mensaje': formMensaje(vid); break;
       case 'pdf-servicios': pdfServicios(vid); break;
       case 'enviar-rep':
@@ -1848,13 +1848,16 @@ function qrPNG(q, escala = 12, margen = 4) {
   return c.toDataURL('image/png');
 }
 
-async function abrirEnlaceCliente(vid) {
+// desde: 'servicios' (vuelve al detalle del vehículo) u otra pestaña (solo cierra la ventana)
+let enlaceDesde = 'servicios';
+async function abrirEnlaceCliente(vid, desde = null) {
+  if (desde) enlaceDesde = desde;
   const v = vehiculo(vid); if (!v) return;
   const c = cliente(v.clienteId) || { nombre: '', telefono: '' };
   const url = v.token ? urlHistorial(v) : '';
   abrirModal(`
     <div id="enlace-cont">
-      <div class="form-head"><h3>Historial del cliente</h3><button class="btn small ghost" data-act="ver" data-vid="${v.id}">← Volver</button></div>
+      <div class="form-head"><h3>Historial del cliente</h3>${enlaceDesde === 'servicios' ? `<button class="btn small ghost" data-act="ver" data-vid="${v.id}">← Volver</button>` : '<button class="btn small ghost" data-act="cerrar">Cerrar</button>'}</div>
       <p class="hint">Enlace <strong>personal y privado</strong> para que ${esc(c.nombre)} vea el historial de servicios y reparaciones de su <strong>${esc(v.marca)} ${esc(v.modelo)} (${esc(v.placa)})</strong>, sin acceso al resto del sistema. Puedes grabarlo en un sticker NFC o imprimir el código QR.</p>
       ${!MODO_NUBE ? '<p class="hint" style="color:var(--bad)">El enlace muestra los datos guardados en la nube; en modo local no tendrá información.</p>' : ''}
       ${v.token ? `

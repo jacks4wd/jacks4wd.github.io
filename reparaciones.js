@@ -234,6 +234,7 @@ function pintarEditorRep() {
       ${repNueva || cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
       ${!repNueva && cerrada && !soloLectura() && vigente(r) ? '<button class="btn ghost" data-rep="corregir" title="Crear una nueva versión con el mismo número">✎ Corregir (nueva versión)</button>' : ''}
       ${repNueva ? '' : '<button class="btn ghost" data-rep="pdf">⬇ PDF</button>'}
+      ${!repNueva && !soloLectura() && r.vehiculoId && vehiculo(r.vehiculoId) ? `<button class="btn ghost" data-rep="enlace" title="Enlace personal para que el cliente vea el historial de su vehículo">${vehiculo(r.vehiculoId).token ? 'Enlace / QR del cliente' : 'Crear enlace / QR'}</button>` : ''}
       <button class="btn primary" data-rep="guardar">Guardar</button>
     </div>
     ${repNueva ? `
@@ -571,6 +572,7 @@ function initReparaciones() {
         it.estado = it.estado === 'aprobado' ? 'rechazado' : 'aprobado';
         repDirty = true; pintarEditorRep(); break;
       }
+      case 'enlace': abrirEnlaceCliente(repEdit.vehiculoId, 'reparaciones'); break;
       case 'pdf':
         if (repDirty) await guardarReparacion(true);
         imprimirDocumento(docRepHTML(repEdit), `Reparacion ${numRep(repEdit.numero).slice(1)}${repEdit.cliente ? ' - ' + repEdit.cliente : ''}`);
