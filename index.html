@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jacks4WD · Registro de clientes</title>
+<link rel="icon" type="image/png" href="img/icono.png">
+<link rel="apple-touch-icon" href="img/icono.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#c2410c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jacks4WD">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img src="img/logo.png" class="logo-img" alt="Jacks4WD">
+    <small>Registro de clientes<br>y servicios</small>
+  </div>
+  <div class="storage">
+    <span id="estado-datos" class="pill">Sin conectar</span>
+    <button class="btn small ghost solo-admin" id="btn-ir-config" title="Puntos de revisión, técnicos y catálogo de aceites">⚙ Configuración</button>
+    <button id="btn-conectar" class="btn small">Conectar carpeta de datos</button>
+    <button id="btn-exportar" class="btn small ghost solo-admin" title="Descargar copia de seguridad">Exportar copia</button>
+    <label class="btn small ghost solo-admin" title="Cargar una copia de seguridad">Importar
+      <input id="input-importar" type="file" accept=".json,application/json" hidden>
+    </label>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="nuevo">Nuevo registro</button>
+  <button class="tab" data-tab="registros">Registros</button>
+  <button class="tab" data-tab="citas">Citas</button>
+  <button class="tab" data-tab="revisiones">Revisiones</button>
+  <button class="tab solo-admin" data-tab="presupuestos">Presupuestos</button>
+  <button class="tab solo-admin" data-tab="recordatorios">Recordatorios <span id="badge-recordatorios" class="badge" hidden>0</span></button>
+</nav>
+
+<main>
+  <!-- ============ NUEVO REGISTRO ============ -->
+  <section id="tab-nuevo" class="panel active">
+    <div class="card">
+      <h2>Buscar cliente existente</h2>
+      <input id="buscar-nuevo" type="search" placeholder="Nombre, teléfono o placa…" autocomplete="off">
+      <div id="resultados-nuevo" class="resultados"></div>
+      <div id="seleccion-actual" class="seleccion" hidden></div>
+    </div>
+
+    <form id="form-nuevo" class="card" autocomplete="off">
+      <div class="form-head">
+        <h2 id="titulo-form">Nuevo cliente</h2>
+        <button type="button" id="btn-limpiar" class="btn small ghost">Limpiar / cliente nuevo</button>
+      </div>
+
+      <fieldset>
+        <legend>Cliente</legend>
+        <div class="grid">
+          <label>Nombre *<input name="nombre" required></label>
+          <label>Teléfono *<input name="telefono" required placeholder="0414-1234567" inputmode="tel"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Vehículo <button type="button" id="btn-otro-vehiculo" class="btn tiny ghost" hidden>+ Otro vehículo de este cliente</button></legend>
+        <div class="grid">
+          <label>Marca *<input name="marca" required list="lista-marcas"></label>
+          <label>Modelo *<input name="modelo" required></label>
+          <label>Placa *<input name="placa" required class="upper"></label>
+          <label>Año <span class="opt">(opcional)</span><input name="anio" inputmode="numeric" maxlength="4"></label>
+          <label>Color <span class="opt">(opcional)</span><input name="color"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Cambio de aceite</legend>
+        <div class="grid">
+          <label>Fecha *<input name="fecha" type="date" required></label>
+          <label>KM actual *<input name="km" class="km" inputmode="numeric" required placeholder="Ej: 150.000"></label>
+          <label>Próximo KM recomendado *<input name="proximoKm" class="km" inputmode="numeric" required></label>
+          <label>Filtro de aceite<input name="filtro" list="lista-filtros" placeholder="Marca / referencia"></label>
+          <label>SKU del filtro<input name="sku" list="lista-skus" class="upper"></label>
+        </div>
+        <h4 class="subtitulo">Aceite</h4>
+        <div id="aceite-nuevo"></div>
+        <label class="full">Revisiones adicionales
+          <textarea name="revisiones" rows="3" placeholder="Ej: nivel de refrigerante, presión de cauchos, frenos…"></textarea>
+        </label>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" class="btn primary">Guardar registro</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============ REGISTROS ============ -->
+  <section id="tab-registros" class="panel">
+    <div class="card">
+      <div class="form-head">
+        <h2>Registros</h2>
+        <select id="filtro-estado">
+          <option value="">Todos</option>
+          <option value="vencido">Vencidos</option>
+          <option value="pronto">Por vencer (15 días)</option>
+          <option value="aldia">Al día</option>
+        </select>
+      </div>
+      <input id="buscar-registros" type="search" placeholder="Buscar por nombre, teléfono, placa, marca o modelo…">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>Teléfono</th><th>Vehículo</th><th>Placa</th>
+            <th>Último cambio</th><th>KM</th><th>Próximo KM</th><th>Aceite</th><th>Estado</th><th></th>
+          </tr></thead>
+          <tbody id="tabla-registros"></tbody>
+        </table>
+      </div>
+      <p id="vacio-registros" class="vacio" hidden>No hay registros todavía.</p>
+    </div>
+  </section>
+
+  <!-- ============ RECORDATORIOS ============ -->
+  <section id="tab-recordatorios" class="panel">
+    <div class="card">
+      <div class="form-head">
+        <div>
+          <h2>Enviar mensaje manual</h2>
+          <p class="hint" style="margin:0">Envía un recordatorio, un mensaje libre o una prueba a cualquier cliente, sin esperar los 3 meses.</p>
+        </div>
+        <button id="btn-mensaje-manual" class="btn wa">✉ Enviar mensaje</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Pendientes de enviar</h2>
+      <p class="hint">Vehículos cuyo último cambio de aceite fue hace 3 meses o más. El botón abre WhatsApp con el mensaje listo; solo tienes que presionar enviar.</p>
+      <div id="lista-pendientes"></div>
+    </div>
+    <div class="card">
+      <h2>Próximos 30 días</h2>
+      <div id="lista-proximos"></div>
+    </div>
+    <div class="card">
+      <h2>Enviados recientemente</h2>
+      <div id="lista-enviados"></div>
+    </div>
+  </section>
+
+  <!-- ============ CITAS ============ -->
+  <section id="tab-citas" class="panel">
+    <div class="citas-layout">
+      <div class="card">
+        <div class="cal-head">
+          <button id="cal-prev" class="btn small ghost">‹</button>
+          <h2 id="cal-titulo"></h2>
+          <button id="cal-next" class="btn small ghost">›</button>
+          <button id="cal-hoy" class="btn small ghost">Hoy</button>
+        </div>
+        <div class="cal-grid cal-dias">
+          <span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span>
+        </div>
+        <div id="cal-grid" class="cal-grid"></div>
+      </div>
+      <div class="card">
+        <h2 id="dia-titulo"></h2>
+        <div id="dia-citas"></div>
+        <button id="btn-nueva-cita" class="btn primary">+ Agendar cita este día</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIGURACIÓN ============ -->
+  <section id="tab-config" class="panel">
+    <div class="subtabs">
+      <button class="subtab active" data-cfgtab="puntos">Puntos de revisión</button>
+      <button class="subtab" data-cfgtab="tecnicos">Técnicos</button>
+      <button class="subtab" data-cfgtab="aceites">Catálogo de aceites</button>
+    </div>
+    <div id="cfg-puntos"></div>
+    <div id="cfg-tecnicos" hidden></div>
+    <div id="cfg-aceites" class="card" hidden>
+      <div class="form-head">
+        <div>
+          <h2>Catálogo de aceites</h2>
+          <p class="hint" style="margin:0">Los productos de aquí aparecen al registrar un cambio de aceite. Toca un producto para agregarle la foto del envase.</p>
+        </div>
+        <button id="btn-nuevo-aceite" class="btn primary">+ Agregar aceite</button>
+      </div>
+      <div id="catalogo-aceites" class="catalogo"></div>
+    </div>
+  </section>
+
+  <!-- ============ REVISIONES ============ -->
+  <section id="tab-presupuestos" class="panel">
+    <div id="pres-lista" class="card">
+      <div class="form-head">
+        <h2>Presupuestos</h2>
+        <button id="btn-nuevo-pres" class="btn primary">+ Nuevo presupuesto</button>
+      </div>
+      <div class="filtros">
+        <input id="buscar-pres" type="search" placeholder="Buscar por cliente, vehículo, número o descripción…">
+        <select id="filtro-pres">
+          <option value="">Todos</option>
+          <option value="pendiente">Pendientes</option>
+          <option value="aprobado">Aprobados</option>
+          <option value="rechazado">Rechazados</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th class="num">Total USD</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tabla-pres"></tbody>
+        </table>
+      </div>
+      <p id="vacio-pres" class="vacio" hidden></p>
+    </div>
+    <div id="pres-editor" hidden></div>
+  </section>
+
+  <section id="tab-revisiones" class="panel">
+    <div class="subtabs">
+      <button class="subtab active" data-rvtab="nueva">Nueva revisión</button>
+      <button class="subtab" data-rvtab="historial">Historial de revisiones <span id="rv-contador" class="contador"></span></button>
+    </div>
+    <div id="rv-nueva"></div>
+    <div id="rv-historial" hidden>
+      <div class="card">
+        <div class="filtros">
+          <input id="rv-buscar" type="search" placeholder="Buscar por cliente, vehículo, placa, técnico o número…">
+          <select id="rv-filtro-tipo">
+            <option value="">Todas</option>
+            <option value="basica">Básicas</option>
+            <option value="completa">Completas</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Tipo</th><th>Técnico</th><th>Resultado</th><th></th></tr></thead>
+            <tbody id="rv-tabla"></tbody>
+          </table>
+        </div>
+        <p id="rv-vacio" class="vacio" hidden></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<datalist id="lista-marcas"></datalist>
+<datalist id="lista-viscosidades"></datalist>
+<datalist id="lista-marcas-aceite"></datalist>
+<datalist id="lista-filtros"></datalist>
+<datalist id="lista-skus"></datalist>
+
+<dialog id="modal">
+  <div id="modal-body"></div>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<div id="print-area"></div>
+
+<script src="nube-config.js"></script>
+<script src="app.js"></script>
+<script src="presupuestos.js"></script>
+<script src="revisiones.js"></script>
+<script src="configuracion.js"></script>
+<script src="nube.js"></script>
+</body>
+</html>
