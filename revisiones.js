@@ -281,8 +281,20 @@ function clienteHTML() {
     const d = datosVehiculoRev(rvEdit);
     return `<div class="seleccion rv-sel-cliente">
       <div><strong>${esc(d.nombre)}</strong> · ${esc(d.telefono)}<br>${esc(d.modelo)} · <strong>${esc(d.placa)}</strong></div>
-      <button type="button" class="btn small ghost" data-rv="cambiar-cliente">Cambiar</button>
+      <div class="rv-sel-botones">
+        <button type="button" class="btn small ghost" data-rv="otro-vehiculo">+ Otro vehículo de este cliente</button>
+        <button type="button" class="btn small ghost" data-rv="cambiar-cliente">Cambiar</button>
+      </div>
     </div>`;
+  }
+  // Nuevo vehículo para un cliente ya registrado
+  if (rvEdit._otroDe && cliente(rvEdit._otroDe)) {
+    const c = cliente(rvEdit._otroDe);
+    return `<div class="seleccion rv-sel-cliente">
+      <div><strong>${esc(c.nombre)}</strong> · ${esc(c.telefono)}<br><span class="hint">Nuevo vehículo para este cliente:</span></div>
+      <button type="button" class="btn small ghost" data-rv="cambiar-cliente">Cancelar</button>
+    </div>
+    <div id="rv-otro-vehiculo" style="margin-top:8px">${camposVehiculoHTML(rvEdit._vehNuevo || {})}</div>`;
   }
   const n = rvEdit._nuevo || {};
   return `
@@ -455,7 +467,8 @@ function leerCabeceraRev() {
   r.fecha = $('#rv-fecha').value || hoyISO();
   const km = parseKm($('#rv-km').value); r.km = Number.isFinite(km) ? km : null;
   r.observaciones = $('#rv-obs').value.trim();
-  if (!r.vehiculoId) {
+  if (!r.vehiculoId && r._otroDe && $('#rv-otro-vehiculo')) r._vehNuevo = leerCamposVehiculo($('#rv-otro-vehiculo'));
+  else if (!r.vehiculoId) {
     r._nuevo = {};
     $$('#rv-nuevo-cliente [data-nuevo]').forEach((i) => (r._nuevo[i.dataset.nuevo] = i.value.trim()));
   }
@@ -464,6 +477,11 @@ function leerCabeceraRev() {
 async function guardarRevision() {
   leerCabeceraRev();
   const r = rvEdit;
+  if (!r.vehiculoId && r._otroDe) {
+    const vid = crearVehiculoCliente(r._otroDe, r._vehNuevo || {});
+    if (!vid) return false;
+    r.vehiculoId = vid; delete r._otroDe; delete r._vehNuevo;
+  }
   if (!r.vehiculoId) {
     const d = r._nuevo || {};
     const faltan = ['nombre', 'telefono', 'marca', 'modelo', 'placa'].filter((k) => !d[k]);
@@ -668,6 +686,13 @@ function renderHistorialRev() {
 
 function renderRevisiones() { renderHistorialRev(); }
 
+// Al entrar a la pestaña: si no hay cambios sin guardar, formulario limpio.
+// Una revisión guardada solo se vuelve a abrir desde el historial.
+function reiniciarVistaRevisiones() {
+  if (rvDirty) return;
+  if (!rvNuevo || (rvEdit && Object.keys(rvEdit.items).length)) { rvEdit = revisionVacia(); rvNuevo = true; pintarEditorRev(); }
+}
+
 // ===================== EVENTOS =====================
 function initRevisiones() {
   if (!db.revisiones) db.revisiones = [];
@@ -737,8 +762,18 @@ function initRevisiones() {
 
     const b = t.closest('[data-rv]'); if (!b) return;
     switch (b.dataset.rv) {
-      case 'cambiar-cliente': leerCabeceraRev(); r.vehiculoId = null; rvDirty = true; $('#rv-cliente').innerHTML = clienteHTML(); break;
-      case 'guardar': await guardarRevision(); break;
+      case 'cambiar-cliente': leerCabeceraRev(); r.vehiculoId = null; delete r._otroDe; delete r._vehNuevo; rvDirty = true; $('#rv-cliente').innerHTML = clienteHTML(); break;
+      case 'otro-vehiculo': {
+        leerCabeceraRev();
+        r._otroDe = vehiculo(r.vehiculoId)?.clienteId; r._vehNuevo = {}; r.vehiculoId = null; rvDirty = true;
+        $('#rv-cliente').innerHTML = clienteHTML();
+        $('#rv-otro-vehiculo [data-veh="marca"]')?.focus();
+        break;
+      }
+      case 'guardar':
+        // Al guardar: limpiar el formulario y mostrar el historial
+        if (await guardarRevision()) { nuevaRevision(); irSubtabRev('historial'); }
+        break;
       case 'nueva': nuevaRevision(); break;
       case 'wa': if (rvDirty && !(await guardarRevision())) break; enviarDiagnostico(rvEdit); break;
       case 'pdf': if (rvDirty && !(await guardarRevision())) break; pdfRevision(rvEdit); break;

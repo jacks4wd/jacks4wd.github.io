@@ -126,7 +126,7 @@ function nuevoPresupuesto(vid = null, extra = null) {
     vehiculoId: null, cliente: '', telefono: '', vehiculo: '', direccion: '',
     items: [itemVacio()], observaciones: CONDICIONES_PREDETERMINADAS,
   };
-  presNuevo = true; presDirty = false; aprobEdit = null;
+  presNuevo = true; presDirty = false; aprobEdit = null; presOtroDe = null;
   if (vid) asignarVehiculo(vid);
   if (extra?.items?.length) { presEdit.items = extra.items.map((it) => ({ ...itemVacio(), ...it })); presDirty = true; }
   if (extra?.revisionId) presEdit.revisionId = extra.revisionId;
@@ -140,9 +140,33 @@ function abrirPresupuesto(id) {
   presEdit = JSON.parse(JSON.stringify(p));
   presEdit.items = presEdit.items.map((it) => ({ ...it, precio: it.precio ?? NaN }));
   if (!presEdit.items.length) presEdit.items.push(itemVacio());
-  presNuevo = false; presDirty = false; aprobEdit = null;
+  presNuevo = false; presDirty = false; aprobEdit = null; presOtroDe = null;
   pintarEditor();
   mostrarEditor(true);
+}
+
+// Cliente registrado seleccionado + opción de agregarle otro vehículo
+let presOtroDe = null;
+function vehiculoRegistradoHTML() {
+  if (!presEdit) return '';
+  if (presOtroDe && cliente(presOtroDe)) {
+    const c = cliente(presOtroDe);
+    return `<div class="seleccion" style="margin-top:8px">
+      <strong>${esc(c.nombre)}</strong> · nuevo vehículo
+      <div id="pres-otro-veh" style="margin-top:8px">${camposVehiculoHTML()}</div>
+      <div class="actions" style="justify-content:flex-start;margin-top:6px">
+        <button type="button" class="btn small primary" data-pact="otro-veh-guardar">Agregar vehículo</button>
+        <button type="button" class="btn small ghost" data-pact="otro-veh-cancelar">Cancelar</button>
+      </div>
+    </div>`;
+  }
+  const v = presEdit.vehiculoId && vehiculo(presEdit.vehiculoId);
+  if (!v) return '';
+  const c = cliente(v.clienteId);
+  return `<div class="seleccion pres-veh-sel" style="margin-top:8px">
+    <span>Cliente registrado: <strong>${esc(c?.nombre || '')}</strong> · ${esc(v.marca)} ${esc(v.modelo)} · ${esc(v.placa)}</span>
+    <button type="button" class="btn tiny ghost" data-pact="otro-veh">+ Otro vehículo de este cliente</button>
+  </div>`;
 }
 
 function asignarVehiculo(vid) {
@@ -192,6 +216,7 @@ function pintarEditor() {
       </div>
       <input id="pres-buscar" type="search" placeholder="Opcional: buscar cliente registrado por nombre, teléfono o placa para llenar sus datos…" autocomplete="off">
       <div id="pres-res" class="picker-list"></div>
+      <div id="pres-veh-registrado">${vehiculoRegistradoHTML()}</div>
     </div>
 
     <form id="form-pres" class="doc doc-editor" autocomplete="off">
@@ -365,8 +390,9 @@ async function confirmarAprobacion() {
   const g = db.presupuestos.find((x) => x.id === p.id);
   if (g) Object.assign(g, { estado: p.estado, aprobacion: JSON.parse(JSON.stringify(p.aprobacion)), reparacionId: p.reparacionId });
   await guardar();
-  pintarEditor();
-  toast(`Presupuesto aprobado. Reparación ${numRep(rep.numero)} creada en la pestaña Reparaciones.`);
+  presDirty = false;
+  volverALista();
+  toast(`Presupuesto aprobado. Reparación ${numRep(rep.numero)} actualizada en la pestaña Reparaciones.`);
 }
 
 async function cambiarEstadoSimple(estado) {
@@ -375,7 +401,8 @@ async function cambiarEstadoSimple(estado) {
   p.estado = estado; aprobEdit = null;
   const g = db.presupuestos.find((x) => x.id === p.id); if (g) g.estado = estado;
   await guardar();
-  pintarEditor();
+  presDirty = false;
+  volverALista();
   toast(`Presupuesto marcado como ${ESTADOS_PRES[estado].toLowerCase()}`);
 }
 
@@ -449,6 +476,12 @@ function volverALista() {
   presEdit = null; presDirty = false;
   mostrarEditor(false);
   renderPresupuestos();
+}
+
+// Al entrar a la pestaña Presupuestos: cerrar editores sin cambios y mostrar los listados
+function reiniciarVistaPresupuestos() {
+  if (presEdit && !presDirty) { presEdit = null; aprobEdit = null; mostrarEditor(false); renderPresupuestos(); }
+  if (typeof repEdit !== 'undefined' && repEdit && !repDirty) { repEdit = null; mostrarEditorRep(false); renderReparaciones(); }
 }
 
 // ===================== PDF =====================
@@ -625,9 +658,27 @@ function initPresupuestos() {
       const f = $('#form-pres');
       ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
       $('#pres-res').innerHTML = ''; $('#pres-buscar').value = '';
+      presOtroDe = null; $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
       return;
     }
     const b = e.target.closest('[data-pact]'); if (!b) return;
+    if (b.dataset.pact === 'otro-veh') {
+      presOtroDe = vehiculo(presEdit.vehiculoId)?.clienteId || null;
+      $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+      $('#pres-otro-veh [data-veh="marca"]')?.focus();
+      return;
+    }
+    if (b.dataset.pact === 'otro-veh-cancelar') { presOtroDe = null; $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML(); return; }
+    if (b.dataset.pact === 'otro-veh-guardar') {
+      const vid = crearVehiculoCliente(presOtroDe, leerCamposVehiculo($('#pres-otro-veh')));
+      if (!vid) return;
+      leerEditor(); asignarVehiculo(vid); presDirty = true; presOtroDe = null;
+      const f = $('#form-pres');
+      ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
+      $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+      toast('Vehículo agregado al cliente');
+      return;
+    }
     switch (b.dataset.pact) {
       case 'volver': volverALista(); break;
       case 'estado': {
@@ -662,7 +713,10 @@ function initPresupuestos() {
         actualizarTotales();
         break;
       }
-      case 'guardar': await guardarPresupuesto(); break;
+      case 'guardar':
+        // Al guardar se vuelve al listado; para aprobar/rechazar se abre desde ahí
+        if (await guardarPresupuesto()) volverALista();
+        break;
       case 'pdf': if (await guardarPresupuesto(true)) exportarPDF(presEdit); break;
       case 'wa': if (await guardarPresupuesto(true)) enviarWhatsApp(presEdit); break;
       case 'duplicar': {

@@ -426,6 +426,37 @@ function buscarVehiculos(q) {
   });
 }
 
+// ---------- Otro vehículo para un cliente ya registrado (citas, revisiones, presupuestos) ----------
+function camposVehiculoHTML(d = {}) {
+  return `<div class="grid campos-veh">
+    <label>Marca *<input data-veh="marca" value="${esc(d.marca || '')}" list="lista-marcas"></label>
+    <label>Modelo *<input data-veh="modelo" value="${esc(d.modelo || '')}"></label>
+    <label>Placa *<input data-veh="placa" class="upper" value="${esc(d.placa || '')}"></label>
+    <label>Año <span class="opt">(opcional)</span><input data-veh="anio" value="${esc(d.anio || '')}" inputmode="numeric" maxlength="4"></label>
+    <label>Color <span class="opt">(opcional)</span><input data-veh="color" value="${esc(d.color || '')}"></label>
+  </div>`;
+}
+function leerCamposVehiculo(cont) {
+  const d = {};
+  cont.querySelectorAll('[data-veh]').forEach((i) => (d[i.dataset.veh] = i.value.trim()));
+  return d;
+}
+// Crea el vehículo para el cliente (o reutiliza el de la misma placa). Devuelve su id o null.
+function crearVehiculoCliente(clienteId, d) {
+  if (!d.marca || !d.modelo || !d.placa) { alert('Completa marca, modelo y placa del vehículo.'); return null; }
+  const placa = d.placa.toUpperCase().replace(/\s+/g, '');
+  const existente = db.vehiculos.find((v) => v.placa === placa);
+  if (existente) {
+    if (existente.clienteId === clienteId) return existente.id;
+    const c = cliente(existente.clienteId);
+    if (!confirm(`La placa ${placa} ya está registrada a nombre de ${c?.nombre || 'otro cliente'} (${existente.marca} ${existente.modelo}).\n¿Usar ese vehículo de todas formas?`)) return null;
+    return existente.id;
+  }
+  const v = { id: uid(), clienteId, marca: d.marca, modelo: d.modelo, placa, anio: d.anio || '', color: d.color || '', creado: new Date().toISOString() };
+  db.vehiculos.push(v);
+  return v.id;
+}
+
 function etiquetaVehiculo(v) {
   const extra = [v.anio, v.color].filter(Boolean).join(' · ');
   return `${v.marca} ${v.modelo}${extra ? ' (' + extra + ')' : ''}`;
@@ -1119,10 +1150,18 @@ function formCita(ct = null, preVid = null) {
   const nueva = !ct;
   ct = ct || { id: uid(), fecha: diaSel, hora: '', vehiculoId: preVid, servicio: 'Cambio de aceite', notas: '', estado: 'pendiente', nombreLibre: '', telefonoLibre: '', vehiculoLibre: '' };
   let vidSel = ct.vehiculoId || null;
+  let otroDe = null; // cliente al que se le agrega un vehículo nuevo
   const resumenVeh = () => {
+    if (otroDe) {
+      const c = cliente(otroDe);
+      return `<strong>${esc(c.nombre)}</strong> · nuevo vehículo <button type="button" class="btn tiny ghost" id="quitar-veh">Cancelar</button>
+        <div id="cita-otro-veh" style="margin-top:8px">${camposVehiculoHTML()}</div>`;
+    }
     if (!vidSel) return '<span class="hint">Ningún cliente seleccionado (puedes escribir los datos abajo si es cliente nuevo).</span>';
     const v = vehiculo(vidSel); const c = cliente(v.clienteId);
-    return `<strong>${esc(c.nombre)}</strong> · ${esc(v.marca)} ${esc(v.modelo)} · ${esc(v.placa)} <button type="button" class="btn tiny ghost" id="quitar-veh">Quitar</button>`;
+    return `<strong>${esc(c.nombre)}</strong> · ${esc(v.marca)} ${esc(v.modelo)} · ${esc(v.placa)}
+      <button type="button" class="btn tiny ghost" id="otro-veh">+ Otro vehículo de este cliente</button>
+      <button type="button" class="btn tiny ghost" id="quitar-veh">Quitar</button>`;
   };
   abrirModal(`
     <h3>${nueva ? 'Agendar cita' : 'Editar cita'}</h3>
@@ -1156,8 +1195,9 @@ function formCita(ct = null, preVid = null) {
     </form>`);
   const pintarVeh = () => {
     $('#cita-veh').innerHTML = resumenVeh();
-    $('#cita-libre').hidden = !!vidSel;
-    const q = $('#quitar-veh'); if (q) q.onclick = () => { vidSel = null; pintarVeh(); };
+    $('#cita-libre').hidden = !!vidSel || !!otroDe;
+    const q = $('#quitar-veh'); if (q) q.onclick = () => { vidSel = null; otroDe = null; pintarVeh(); };
+    const o = $('#otro-veh'); if (o) o.onclick = () => { otroDe = vehiculo(vidSel).clienteId; vidSel = null; pintarVeh(); $('#cita-otro-veh [data-veh="marca"]').focus(); };
   };
   pintarVeh();
   $('#cita-buscar').oninput = (e) => {
@@ -1166,11 +1206,16 @@ function formCita(ct = null, preVid = null) {
   };
   $('#cita-res').onclick = (e) => {
     const r = e.target.closest('[data-pick]'); if (!r) return;
-    vidSel = r.dataset.pick; $('#cita-res').innerHTML = ''; $('#cita-buscar').value = ''; pintarVeh();
+    vidSel = r.dataset.pick; otroDe = null; $('#cita-res').innerHTML = ''; $('#cita-buscar').value = ''; pintarVeh();
   };
   $('#form-cita').onsubmit = async (e) => {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target).entries());
+    if (otroDe) {
+      const vid = crearVehiculoCliente(otroDe, leerCamposVehiculo($('#cita-otro-veh')));
+      if (!vid) return;
+      vidSel = vid; otroDe = null;
+    }
     if (!vidSel && !(d.nombreLibre || '').trim()) { alert('Selecciona un cliente registrado o escribe el nombre.'); return; }
     // Si cambia la fecha, la hora o el motivo, los avisos enviados quedan desactualizados
     if (!nueva && (ct.fecha !== d.fecha || ct.hora !== d.hora || ct.servicio !== d.servicio)) {
@@ -1216,7 +1261,13 @@ function init() {
   $('#btn-nuevo-aceite').onclick = () => formAceite();
   
   $('#catalogo-aceites').onclick = (e) => { const p = e.target.closest('[data-aid]'); if (p) formAceite(aceitePorId(p.dataset.aid)); };
-  $$('.tab').forEach((b) => (b.onclick = () => irA(b.dataset.tab)));
+  // Al entrar a una pestaña se muestra la vista limpia (lista / formulario nuevo),
+  // salvo que haya cambios sin guardar en lo que se estaba editando.
+  $$('.tab').forEach((b) => (b.onclick = () => {
+    irA(b.dataset.tab);
+    if (b.dataset.tab === 'revisiones' && typeof reiniciarVistaRevisiones === 'function') reiniciarVistaRevisiones();
+    if (b.dataset.tab === 'presupuestos' && typeof reiniciarVistaPresupuestos === 'function') reiniciarVistaPresupuestos();
+  }));
   $('#btn-conectar').onclick = conectarCarpeta;
   $('#btn-exportar').onclick = exportar;
   const selWa = $('#sel-whatsapp');

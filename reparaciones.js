@@ -17,6 +17,8 @@ function crearOActualizarReparacion(p) {
     cant: it.cant, unidad: it.unidad, desc: it.desc, sku: it.sku,
     estado: it.aprobado ? 'aprobado' : 'rechazado',
   }));
+  // Si la reparación estaba abierta en pantalla, se cierra para no guardar luego una copia vieja
+  if (typeof repEdit !== 'undefined' && repEdit && repEdit.id === p.reparacionId) { repEdit = null; repDirty = false; mostrarEditorRep(false); }
   let rep = p.reparacionId && db.reparaciones.find((r) => r.id === p.reparacionId);
   const base = { presupuestoId: p.id, presupuestoNumero: p.numero, vehiculoId: p.vehiculoId || null, cliente: p.cliente, telefono: p.telefono, vehiculo: p.vehiculo, items };
   if (rep) {
@@ -155,11 +157,17 @@ async function guardarReparacion(silencioso = false) {
   leerEditorRep();
   const r = repEdit;
   r.actualizado = new Date().toISOString();
-  const i = db.reparaciones.findIndex((x) => x.id === r.id);
-  if (i >= 0) db.reparaciones[i] = JSON.parse(JSON.stringify(r));
+  // Solo se actualizan los campos que se editan aquí, sobre la versión más reciente
+  // (así nunca se pierden cambios hechos desde la aprobación del presupuesto)
+  const actual = db.reparaciones.find((x) => x.id === r.id);
+  if (actual) {
+    Object.assign(actual, { tecnico: r.tecnico, estado: r.estado, notas: r.notas, notaEntrega: r.notaEntrega, actualizado: r.actualizado });
+    const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
+    if (mismosItems) actual.items.forEach((it, i) => (it.estado = r.items[i].estado));
+    repEdit = JSON.parse(JSON.stringify(actual));
+  }
   repDirty = false;
   await guardar();
-  pintarEditorRep();
   if (!silencioso) toast(`Reparación ${numRep(r.numero)} guardada`);
 }
 
@@ -221,7 +229,7 @@ function initReparaciones() {
     const b = e.target.closest('[data-rep]'); if (!b || !repEdit) return;
     switch (b.dataset.rep) {
       case 'volver': volverAListaRep(); break;
-      case 'guardar': await guardarReparacion(); break;
+      case 'guardar': await guardarReparacion(); volverAListaRep(); break;
       case 'toggle': {
         leerEditorRep();
         const it = repEdit.items[Number(b.closest('tr').dataset.ri)];
@@ -234,7 +242,13 @@ function initReparaciones() {
         break;
       case 'presupuesto':
         if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) break;
-        repDirty = false; irSubtabPres('presupuestos'); abrirPresupuesto(repEdit.presupuestoId); break;
+        {
+          // Se cierra la reparación para que no quede una copia vieja abierta
+          const pid = repEdit.presupuestoId;
+          repEdit = null; repDirty = false; mostrarEditorRep(false);
+          irSubtabPres('presupuestos'); abrirPresupuesto(pid);
+        }
+        break;
       case 'borrar':
         if (!confirm(`¿Eliminar la reparación ${numRep(repEdit.numero)}? El presupuesto aprobado se conserva.`)) break;
         db.reparaciones = db.reparaciones.filter((x) => x.id !== repEdit.id);
