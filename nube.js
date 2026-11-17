@@ -79,6 +79,7 @@ const Nube = (() => {
     filas.forEach((f) => {
       if (f.id === 'revision') cfg.revision = f.data;
       if (f.id === 'tecnicos') cfg.tecnicos = f.data?.lista;
+      if (f.id === 'plantillasPres') cfg.plantillasPres = f.data?.lista;
     });
     return cfg;
   }
@@ -86,6 +87,7 @@ const Nube = (() => {
     const filas = [];
     if (db.config?.revision) filas.push({ id: 'revision', data: db.config.revision });
     if (db.config?.tecnicos) filas.push({ id: 'tecnicos', data: { lista: db.config.tecnicos } });
+    if (db.config?.plantillasPres) filas.push({ id: 'plantillasPres', data: { lista: db.config.plantillasPres } });
     return filas;
   }
   const filasDe = (tabla) => (tabla === 'config' ? configAFilas() : (db[tabla] || []).map((x) => ({ id: x.id, data: x })));

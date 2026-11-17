@@ -143,6 +143,12 @@ function normalizarDatos(data) {
   if (d.config.revision) d.config.revision = limpiarEstructura(d.config.revision);
   if (Array.isArray(d.config.tecnicos)) d.config.tecnicos = d.config.tecnicos.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 50);
   else delete d.config.tecnicos;
+  if (Array.isArray(d.config.plantillasPres)) {
+    d.config.plantillasPres = d.config.plantillasPres.filter((p) => p && typeof p === 'object' && id(p.id)).slice(0, 100).map((p) => ({
+      id: p.id, nombre: String(p.nombre || '').slice(0, 120),
+      items: (Array.isArray(p.items) ? p.items : []).map((x) => String(x || '').slice(0, 200)).filter(Boolean).slice(0, 100),
+    }));
+  } else delete d.config.plantillasPres;
 
   d.revisiones.forEach((r) => {
     if (r.estructura) r.estructura = limpiarEstructura(r.estructura);

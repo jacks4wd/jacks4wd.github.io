@@ -14,7 +14,8 @@ const GRUPOS_CFG = { basica: 'Revisión básica', completa: 'Adicional en la rev
 
 function irSubtabCfg(cual) {
   $$('.subtab[data-cfgtab]').forEach((b) => b.classList.toggle('active', b.dataset.cfgtab === cual));
-  ['puntos', 'tecnicos', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
+  ['puntos', 'tecnicos', 'plantillas', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
+  if (cual === 'plantillas') { if (!plDirty) plEdit = copiar(plantillasPres()); pintarCfgPlantillas(); }
   if (cual === 'puntos') { if (!cfgDirty) cfgEdit = copiar(configRevision()); pintarCfgPuntos(); }
   if (cual === 'tecnicos') { if (!tecDirty) tecEdit = [...tecnicos()]; pintarCfgTecnicos(); }
   if (cual === 'aceites') renderCatalogo();
@@ -133,8 +134,95 @@ function pintarCfgTecnicos() {
     </div>`;
 }
 
+// ===================== PLANTILLAS DE PRESUPUESTO =====================
+let plEdit = null;
+let plDirty = false;
+
+function pintarCfgPlantillas() {
+  $('#cfg-plantillas').innerHTML = `
+    <div class="card cfg-barra">
+      <div>
+        <h2>Plantillas de presupuesto</h2>
+        <p class="hint" style="margin:0">Presupuestos pre-armados. Al usarlos solo se agregan los nombres de los ítems; luego ajustas cantidades, precios y nombres.</p>
+      </div>
+      <div class="cfg-acciones">
+        <button type="button" class="btn small ghost" data-pl="nueva">+ Nueva plantilla</button>
+        <button type="button" class="btn primary" data-pl="guardar">${plDirty ? 'Guardar •' : 'Guardar'}</button>
+      </div>
+    </div>
+    ${plEdit.map((pl, p) => `
+      <div class="card cfg-seccion" data-p="${p}">
+        <div class="cfg-sec-cab">
+          <input data-pl-campo="nombre" value="${esc(pl.nombre)}" placeholder="Nombre de la plantilla (ej: Entonación básica)">
+          <button type="button" class="btn tiny danger" data-pl="borrar">Eliminar plantilla</button>
+        </div>
+        ${pl.items.map((it, i) => `
+          <div class="cfg-tec" data-i="${i}">
+            <span class="cfg-num">${i + 1}</span>
+            <input data-pl-campo="item" value="${esc(it)}" placeholder="Nombre del ítem">
+            <button type="button" class="btn tiny ghost" data-pl="subir" title="Subir">↑</button>
+            <button type="button" class="btn tiny ghost" data-pl="bajar" title="Bajar">↓</button>
+            <button type="button" class="btn tiny danger" data-pl="borrar-item" title="Quitar">✕</button>
+          </div>`).join('')}
+        <button type="button" class="btn small ghost" data-pl="agregar-item">+ Agregar ítem</button>
+      </div>`).join('') || '<div class="card"><p class="vacio">No hay plantillas. Pulsa "+ Nueva plantilla".</p></div>'}`;
+}
+
+function marcarPl() { plDirty = true; const b = $('#cfg-plantillas [data-pl="guardar"]'); if (b) b.textContent = 'Guardar •'; }
+
+async function guardarCfgPlantillas() {
+  const limpias = [];
+  for (const pl of plEdit) {
+    const nombre = (pl.nombre || '').trim();
+    const items = pl.items.map((x) => (x || '').trim()).filter(Boolean);
+    if (!nombre && !items.length) continue;
+    if (!nombre) { alert('Hay una plantilla sin nombre. Escríbele un nombre o elimínala.'); return; }
+    if (!items.length) { alert(`La plantilla "${nombre}" no tiene ítems.`); return; }
+    limpias.push({ id: pl.id, nombre, items });
+  }
+  db.config.plantillasPres = limpias;
+  plEdit = copiar(limpias); plDirty = false;
+  await guardar();
+  pintarCfgPlantillas();
+  toast('Plantillas guardadas');
+}
+
 // ===================== EVENTOS =====================
 function initConfiguracion() {
+  const pl = $('#cfg-plantillas');
+  pl.addEventListener('input', (e) => {
+    const t = e.target; const campo = t.dataset.plCampo; if (!campo) return;
+    const p = Number(t.closest('[data-p]').dataset.p);
+    if (campo === 'nombre') plEdit[p].nombre = t.value;
+    else plEdit[p].items[Number(t.closest('[data-i]').dataset.i)] = t.value;
+    marcarPl();
+  });
+  pl.addEventListener('keydown', (e) => {
+    // Enter en un ítem agrega otro debajo
+    if (e.key !== 'Enter' || e.target.dataset.plCampo !== 'item') return;
+    e.preventDefault();
+    const p = Number(e.target.closest('[data-p]').dataset.p); const i = Number(e.target.closest('[data-i]').dataset.i);
+    plEdit[p].items.splice(i + 1, 0, ''); marcarPl(); pintarCfgPlantillas();
+    $(`#cfg-plantillas [data-p="${p}"] [data-i="${i + 1}"] input`)?.focus();
+  });
+  pl.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-pl]'); if (!b) return;
+    const p = Number(b.closest('[data-p]')?.dataset.p); const i = Number(b.closest('[data-i]')?.dataset.i);
+    const mover = (arr, a, d) => { const j = a + d; if (j < 0 || j >= arr.length) return; [arr[a], arr[j]] = [arr[j], arr[a]]; };
+    switch (b.dataset.pl) {
+      case 'guardar': await guardarCfgPlantillas(); return;
+      case 'nueva': plEdit.push({ id: claveNueva('pl'), nombre: '', items: [''] }); break;
+      case 'borrar': if (!confirm(`¿Eliminar la plantilla "${plEdit[p].nombre || 'sin nombre'}"?`)) return; plEdit.splice(p, 1); break;
+      case 'agregar-item': plEdit[p].items.push(''); break;
+      case 'borrar-item': plEdit[p].items.splice(i, 1); break;
+      case 'subir': mover(plEdit[p].items, i, -1); break;
+      case 'bajar': mover(plEdit[p].items, i, 1); break;
+      default: return;
+    }
+    marcarPl(); pintarCfgPlantillas();
+    if (['nueva', 'agregar-item'].includes(b.dataset.pl)) $$('#cfg-plantillas input').filter((x) => !x.value).at(-1)?.focus();
+  });
+
   $('#btn-ir-config').onclick = abrirConfiguracion;
   $$('.subtab[data-cfgtab]').forEach((b) => (b.onclick = () => irSubtabCfg(b.dataset.cfgtab)));
 
@@ -210,7 +298,7 @@ function initConfiguracion() {
     }
   });
 
-  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty || plDirty) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 initConfiguracion();

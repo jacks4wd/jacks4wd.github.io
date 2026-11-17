@@ -50,6 +50,35 @@ function totalesPres(p) {
 const siguienteNumero = () => Math.max(0, ...db.presupuestos.map((p) => p.numero || 0)) + 1;
 const itemVacio = () => ({ cant: 1, unidad: 'Und.', desc: '', sku: '', precio: NaN });
 
+// ===================== PLANTILLAS DE PRESUPUESTO =====================
+// Presupuestos pre-armados (se editan en ⚙ Configuración → Plantillas).
+// Solo agregan los nombres de los ítems; cantidades y precios se completan a mano.
+const PLANTILLAS_PRES_INICIALES = [
+  { id: 'pl_entonacion_basica', nombre: 'Entonación básica', items: [
+    'Limpieza de inyectores', 'Bujías', 'Filtro de gasolina', 'Filtro de aire',
+    'Limpieza de cuerpo de aceleración', 'Mano de obra',
+  ] },
+];
+function plantillasPres() {
+  if (!db.config) db.config = {};
+  if (!Array.isArray(db.config.plantillasPres)) db.config.plantillasPres = JSON.parse(JSON.stringify(PLANTILLAS_PRES_INICIALES));
+  return db.config.plantillasPres;
+}
+
+function aplicarPlantilla(id) {
+  const pl = plantillasPres().find((x) => x.id === id); if (!pl) return;
+  leerEditor();
+  const nuevos = pl.items.map((desc) => ({ ...itemVacio(), desc, unidad: /mano de obra|servicio/i.test(desc) ? 'Serv.' : 'Und.' }));
+  // Si solo hay líneas vacías, se reemplazan; si no, se agregan al final
+  const conDatos = presEdit.items.filter((it) => it.desc || Number.isFinite(it.precio));
+  presEdit.items = [...conDatos, ...nuevos];
+  presDirty = true;
+  $('#pres-items').innerHTML = presEdit.items.map(filaHTML).join('');
+  actualizarTotales();
+  $$('#pres-items textarea[name="desc"]').forEach(autoAltura);
+  toast(`Plantilla "${pl.nombre}" agregada: completa cantidades y precios`);
+}
+
 // ===================== LISTADO =====================
 function renderPresupuestos() {
   if (!db.presupuestos) db.presupuestos = [];
@@ -153,6 +182,14 @@ function pintarEditor() {
     </div>
 
     <div class="card pres-buscar">
+      <div class="pres-plantilla">
+        <label>Usar plantilla <span class="opt">(opcional)</span>
+          <select id="pres-plantilla">
+            <option value="">— Presupuesto libre —</option>
+            ${plantillasPres().map((pl) => `<option value="${esc(pl.id)}">${esc(pl.nombre)} (${pl.items.length} ítems)</option>`).join('')}
+          </select>
+        </label>
+      </div>
       <input id="pres-buscar" type="search" placeholder="Opcional: buscar cliente registrado por nombre, teléfono o placa para llenar sus datos…" autocomplete="off">
       <div id="pres-res" class="picker-list"></div>
     </div>
@@ -566,6 +603,7 @@ function initPresupuestos() {
       $$('.aprob-tabla [data-aprob]').forEach((c) => (c.checked = e.target.checked)); totalesAprobacion(); return;
     }
     if (e.target.id === 'aprob-tecnico') { $('#aprob-tecnico-otro-wrap').hidden = e.target.value !== '__otro'; aprobEdit.tecnico = leerTecnicoAprob(); return; }
+    if (e.target.id === 'pres-plantilla') { if (e.target.value) aplicarPlantilla(e.target.value); e.target.value = ''; return; }
     if (e.target.closest('#form-pres')) { presDirty = true; actualizarTotales(); }
     // Al salir del precio, mostrarlo con 2 decimales
     if (e.target.name === 'precio') { const n = parseDec(e.target.value); if (Number.isFinite(n)) e.target.value = r2(n).toFixed(2); }
