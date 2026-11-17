@@ -637,3 +637,43 @@ button.rep-estado { cursor: pointer; }
 .rep-tabla td { vertical-align: middle; }
 .wa-sel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .wa-sel select { width: auto; padding: 4px 6px; font-size: 12px; margin: 0; }
+
+/* ---------- Teléfonos ---------- */
+@media screen and (max-width: 700px) {
+  /* Cabecera compacta */
+  .topbar { padding: 8px 12px; gap: 8px; }
+  .brand small { display: none; }
+  .logo-img { height: 34px; }
+  .storage { gap: 6px; }
+  .pill { font-size: 11px; padding: 3px 8px; }
+  #btn-exportar, .storage label.solo-admin { display: none !important; } /* respaldo: desde la computadora */
+  .tab { padding: 12px 12px; }
+  main { padding: 10px; }
+  .card { padding: 14px; }
+
+  /* Editor de presupuesto: cada línea como tarjeta (sin desplazamiento horizontal) */
+  .doc-editor .doc-items, .doc-editor .doc-items tbody { display: block; width: 100%; }
+  .doc-editor .doc-items thead { display: none; }
+  .doc-editor .doc-items tr {
+    display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid #e5e7eb;
+  }
+  .doc-editor .doc-items td { display: block; padding: 0 !important; width: auto !important; }
+  .doc-editor .doc-items td:nth-child(2) { grid-column: 1 / -1; order: -1; }
+  .doc-editor .doc-items td.col-sku { grid-column: 2 / 4; }
+  .doc-editor .doc-items td.col-sku input::placeholder { color: #9ca3af; }
+  .doc-editor .doc-items td.col-total { text-align: right; padding-top: 0 !important; }
+  .doc-editor .doc-items td.col-total::before { content: "Total: "; font-weight: 400; color: var(--muted); }
+  .doc-editor .col-cant input { width: 56px; }
+  .doc-totales { flex-direction: column; gap: 6px; }
+  .doc-sumas { min-width: 100%; }
+  .pres-toolbar { position: static; }
+  .pres-toolbar .btn { padding: 8px 10px; font-size: 13px; }
+
+  /* Hoja de reparación */
+  .rep-tabla th:nth-child(3), .rep-tabla td:nth-child(3) { display: none; }
+  .rep-tabla td, .rep-tabla th { white-space: normal; padding: 6px !important; }
+  .rep-estado { white-space: normal; }
+  .pres-est-botones { gap: 6px; }
+  .pres-est-b { padding: 10px 4px; font-size: 14px; }
+}
