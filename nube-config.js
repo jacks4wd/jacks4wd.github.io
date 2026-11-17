@@ -9,4 +9,5 @@ const NUBE_CONFIG = {
   clave: 'sb_publishable_yQgTIx4Z6VA30h3VEaTaOA_0nJd-wvs',
   dominioUsuarios: 'jacks4wd.app', // "admin" → admin@jacks4wd.app
   segundosActualizacion: 30,       // cada cuánto se traen los cambios de otros dispositivos
+  minutosInactividad: 30,          // la sesión se cierra sola tras este tiempo sin uso
 };

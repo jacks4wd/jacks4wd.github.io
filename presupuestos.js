@@ -95,8 +95,9 @@ function renderPresupuestos() {
       <td>${esc(p.cliente || '—')}</td>
       <td>${esc(p.vehiculo || '—')}</td>
       <td class="num"><strong>${fmtUSD(totalesPres(p).total)}</strong>${p.estado === 'aprobado' && p.aprobacion ? `<br><small class="hint">Aprobado: ${fmtUSD(totalesPres({ items: p.aprobacion.items.filter((i) => i.aprobado) }).total)}</small>` : ''}</td>
-      <td><span class="estado-pres ${p.estado}">${ESTADOS_PRES[p.estado] || p.estado}</span></td>
+      <td><button type="button" class="estado-pres estado-cambiar ${p.estado}" data-pact="estado-lista" data-pid="${p.id}" title="Cambiar estado">${ESTADOS_PRES[p.estado] || p.estado}</button></td>
       <td class="acciones-fila">
+        <button class="btn tiny ghost" data-pact="editar-lista" data-pid="${p.id}" title="Modificar">✏️</button>
         <button class="btn tiny ghost" data-pact="pdf-lista" data-pid="${p.id}">PDF</button>
         <button class="btn tiny wa" data-pact="wa-lista" data-pid="${p.id}">WhatsApp</button>
       </td>
@@ -144,6 +145,20 @@ function abrirPresupuesto(id) {
   presNuevo = false; presDirty = false; aprobEdit = null; presOtroDe = null;
   pintarEditor();
   mostrarEditor(true);
+}
+
+// Cambiar el estado desde el listado, sin abrir todo el presupuesto.
+// "Aprobado" abre el presupuesto con el panel para marcar qué ítems aprobó el cliente.
+function cambiarEstadoDesdeLista(p, boton) {
+  const rep = p.reparacionId && (db.reparaciones || []).find((r) => r.id === p.reparacionId);
+  if (esCerrada(rep)) { toast(`Su reparación ${numRep(rep.numero)} ya está cerrada; el estado no se puede cambiar.`); return; }
+  menuEstado(boton, Object.entries(ESTADOS_PRES).map(([valor, texto]) => ({ valor, texto, clase: valor, actual: valor === p.estado })), async (nuevo) => {
+    if (nuevo === 'aprobado') { abrirPresupuesto(p.id); iniciarAprobacion(); return; }
+    if (p.estado === 'aprobado' && p.reparacionId && !confirm(`El presupuesto pasará a "${ESTADOS_PRES[nuevo]}". La reparación ya creada se conserva. ¿Continuar?`)) return;
+    p.estado = nuevo;
+    await guardar();
+    toast(`Presupuesto ${numPres(p.numero)} marcado como ${ESTADOS_PRES[nuevo].toLowerCase()}`);
+  });
 }
 
 // Aviso cuando el presupuesto se creó a partir de los ítems rechazados de una reparación
@@ -506,6 +521,7 @@ function volverALista() {
 
 // Al entrar a la pestaña Presupuestos: cerrar editores sin cambios y mostrar los listados
 function reiniciarVistaPresupuestos() {
+  if (document.body.classList.contains('rol-taller') && typeof irSubtabPres === 'function') irSubtabPres('reparaciones');
   if (presEdit && !presDirty) { presEdit = null; aprobEdit = null; mostrarEditor(false); renderPresupuestos(); }
   if (typeof repEdit !== 'undefined' && repEdit && !repDirty) { repEdit = null; mostrarEditorRep(false); renderReparaciones(); }
 }
@@ -629,6 +645,8 @@ function initPresupuestos() {
     const p = db.presupuestos.find((x) => x.id === (b || e.target.closest('[data-pid]'))?.dataset.pid);
     if (!p) return;
     if (b?.dataset.pact === 'pdf-lista') return exportarPDF(p);
+    if (b?.dataset.pact === 'editar-lista') return abrirPresupuesto(p.id);
+    if (b?.dataset.pact === 'estado-lista') return cambiarEstadoDesdeLista(p, b);
     if (b?.dataset.pact === 'wa-lista') return enviarWhatsApp(p);
     abrirPresupuesto(p.id);
   };

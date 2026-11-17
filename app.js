@@ -14,10 +14,46 @@ const CONFIG = {
   archivoDatos: 'taller.json',
 };
 
+// ---------- Mensajes de WhatsApp editables (⚙ Configuración → Citas y mensajes) ----------
+// Se escriben con "variables" entre llaves que la app reemplaza al enviar.
+const MENSAJES_INICIALES = {
+  aceite: 'Hola {nombre}, el último cambio de aceite de tu vehículo {vehiculo} fue el {fecha} con {km}. ' +
+    'Este servicio se recomienda cada 3 meses o 6.000 km.\n\n' +
+    'En {taller} nos preocupamos por tu vehículo: revisa el kilometraje actual y agenda tu cita respondiendo a este mensaje.\n\n— {taller}',
+  citaCliente: 'Hola {nombre}, te recordamos tu cita en {taller} el {fecha} a las {hora} para {motivo} de tu {vehiculo}.\n\n' +
+    'Te esperamos en {direccion}. Si necesitas cambiar la fecha u hora, respóndenos este mensaje.\n\n— {taller}',
+  citaEquipo: '*Cita agendada* — {taller}\nVehículo: {vehiculo} · {placa}\nFecha: {fecha} · {hora}\nMotivo: {motivo}',
+  reparacion: 'Hola {nombre}, han pasado 6 meses desde la última reparación de tu {vehiculo} ({fecha}). ' +
+    'Para mantenerlo en óptimas condiciones te invitamos a una revisión de seguimiento, sin costo adicional.\n\n' +
+    'Responde este mensaje para agendar tu cita.\n\n— {taller}',
+};
+const VARIABLES_MENSAJES = {
+  aceite: ['nombre', 'vehiculo', 'placa', 'fecha', 'km', 'taller'],
+  citaCliente: ['nombre', 'vehiculo', 'placa', 'fecha', 'hora', 'motivo', 'taller', 'direccion'],
+  citaEquipo: ['vehiculo', 'placa', 'fecha', 'hora', 'motivo', 'taller'],
+  reparacion: ['nombre', 'vehiculo', 'placa', 'fecha', 'taller'],
+};
+const MOTIVOS_CITA_INICIALES = ['Cambio de aceite', 'Revisión general', 'Frenos', 'Suspensión', 'Diagnóstico', 'Presupuesto'];
+
+function textoMensaje(clave) {
+  const m = db.config?.mensajes?.[clave];
+  return typeof m === 'string' && m.trim() ? m : MENSAJES_INICIALES[clave];
+}
+// Reemplaza {variable} por su valor; las variables vacías se quitan con su espacio
+function rellenarMensaje(clave, vars) {
+  const base = { taller: CONFIG.taller, direccion: typeof EMPRESA !== 'undefined' ? EMPRESA.direccion : '', ...vars };
+  return textoMensaje(clave).replace(/\{(\w+)\}/g, (_, k) => (base[k] ?? '').toString()).replace(/ {2,}/g, ' ').replace(/ ([,.])/g, '$1');
+}
+function motivosCita() {
+  const m = db.config?.motivosCita;
+  return Array.isArray(m) && m.length ? m : MOTIVOS_CITA_INICIALES;
+}
+
 function mensajeRecordatorio(cliente, vehiculo, servicio) {
-  return `Hola ${cliente.nombre}, el último cambio de aceite de tu vehículo ${vehiculo.marca} ${vehiculo.modelo} fue el ${fmtFecha(servicio.fecha)} con ${fmtKm(servicio.km)}. ` +
-    `Este servicio se recomienda cada ${CONFIG.mesesRecordatorio} meses o ${fmtKm(CONFIG.kmIntervalo)}.\n\n` +
-    `En ${CONFIG.taller} nos preocupamos por tu vehículo: revisa el kilometraje actual y agenda tu cita respondiendo a este mensaje.\n\n— ${CONFIG.taller}`;
+  return rellenarMensaje('aceite', {
+    nombre: cliente.nombre, vehiculo: `${vehiculo.marca} ${vehiculo.modelo}`, placa: vehiculo.placa,
+    fecha: fmtFecha(servicio.fecha), km: fmtKm(servicio.km),
+  });
 }
 
 // Plantillas para el envío manual de mensajes (se pueden editar antes de enviar).
@@ -79,7 +115,7 @@ let dirHandle = null;
 let fileHandle = null;
 
 function vacio() {
-  return { version: 1, actualizado: null, clientes: [], vehiculos: [], servicios: [], citas: [], mensajes: [], aceites: catalogoInicial(), presupuestos: [], revisiones: [], reparaciones: [], config: {} };
+  return { version: 1, actualizado: null, clientes: [], vehiculos: [], servicios: [], citas: [], mensajes: [], aceites: catalogoInicial(), presupuestos: [], revisiones: [], reparaciones: [], ingresos: [], config: {} };
 }
 
 // Estructura de puntos de revisión: solo claves seguras y tipos conocidos
@@ -115,8 +151,8 @@ function normalizarDatos(data) {
   const lista = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
   const nuevoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'presupuestos', 'revisiones', 'reparaciones'].forEach((k) => (d[k] = lista(d[k])));
-  const todos = [...d.clientes, ...d.vehiculos, ...d.servicios, ...d.citas, ...d.mensajes, ...d.aceites, ...d.presupuestos, ...d.revisiones, ...d.reparaciones];
+  ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'presupuestos', 'revisiones', 'reparaciones', 'ingresos'].forEach((k) => (d[k] = lista(d[k])));
+  const todos = [...d.clientes, ...d.vehiculos, ...d.servicios, ...d.citas, ...d.mensajes, ...d.aceites, ...d.presupuestos, ...d.revisiones, ...d.reparaciones, ...d.ingresos];
   todos.forEach((x) => { if (!id(x.id)) x.id = nuevoId(); });
 
   d.vehiculos.forEach((v) => { v.clienteId = id(v.clienteId); });
@@ -131,8 +167,9 @@ function normalizarDatos(data) {
     if (!['pendiente', 'completada', 'cancelada'].includes(c.estado)) c.estado = 'pendiente';
     c.hora = /^\d{2}:\d{2}$/.test(c.hora || '') ? c.hora : '';
     c.avisoCliente = fecha(c.avisoCliente); c.avisoGrupo = fecha(c.avisoGrupo);
+    c.motivoOtro = String(c.motivoOtro || '').slice(0, 120);
   });
-  d.mensajes.forEach((m) => { m.vehiculoId = id(m.vehiculoId); m.fecha = fecha(m.fecha) || hoyISO(); m.creado = String(m.creado || ''); });
+  d.mensajes.forEach((m) => { m.vehiculoId = id(m.vehiculoId); m.reparacionId = id(m.reparacionId); m.fecha = fecha(m.fecha) || hoyISO(); m.creado = String(m.creado || ''); });
   d.aceites.forEach((a) => {
     // Fotos: solo imágenes incrustadas o las incluidas en img/aceites
     const f = String(a.foto || '');
@@ -143,6 +180,13 @@ function normalizarDatos(data) {
   if (d.config.revision) d.config.revision = limpiarEstructura(d.config.revision);
   if (Array.isArray(d.config.tecnicos)) d.config.tecnicos = d.config.tecnicos.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 50);
   else delete d.config.tecnicos;
+  if (d.config.mensajes && typeof d.config.mensajes === 'object') {
+    const m = {};
+    ['aceite', 'citaCliente', 'citaEquipo', 'reparacion'].forEach((k) => { if (typeof d.config.mensajes[k] === 'string') m[k] = d.config.mensajes[k].slice(0, 2000); });
+    d.config.mensajes = m;
+  } else delete d.config.mensajes;
+  if (Array.isArray(d.config.motivosCita)) d.config.motivosCita = d.config.motivosCita.map((x) => String(x || '').trim().slice(0, 80)).filter((x) => x && x !== 'Otro').slice(0, 50);
+  else delete d.config.motivosCita;
   if (Array.isArray(d.config.plantillasPres)) {
     d.config.plantillasPres = d.config.plantillasPres.filter((p) => p && typeof p === 'object' && id(p.id)).slice(0, 100).map((p) => ({
       id: p.id, nombre: String(p.nombre || '').slice(0, 120),
@@ -155,6 +199,8 @@ function normalizarDatos(data) {
     r.vehiculoId = id(r.vehiculoId); r.fecha = fecha(r.fecha) || hoyISO();
     r.numero = Math.max(0, Math.floor(num(r.numero) || 0));
     if (!['basica', 'completa'].includes(r.tipo)) r.tipo = 'basica';
+    if (!['abierta', 'cerrada', 'cancelada'].includes(r.estado)) r.estado = 'abierta';
+    r.fechaCierre = fecha(r.fechaCierre);
     r.tecnico = String(r.tecnico || ''); r.observaciones = String(r.observaciones || ''); r.km = num(r.km);
     r.diagnosticoEnviado = fecha(r.diagnosticoEnviado);
     const CLAVE = /^[a-z0-9_]{1,40}$/;
@@ -201,6 +247,16 @@ function normalizarDatos(data) {
     if (!['en_proceso', 'culminado', 'cancelado'].includes(r.estado)) r.estado = 'en_proceso';
     r.fechaCierre = fecha(r.fechaCierre); r.cerradoPor = String(r.cerradoPor || '');
     r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));
+    r.ingresoId = id(r.ingresoId);
+  });
+  d.presupuestos.forEach((p) => { p.ingresoId = id(p.ingresoId); });
+  d.ingresos.forEach((x) => {
+    x.vehiculoId = id(x.vehiculoId); x.presupuestoId = id(x.presupuestoId); x.reparacionId = id(x.reparacionId);
+    x.fecha = fecha(x.fecha) || hoyISO();
+    x.numero = Math.max(0, Math.floor(num(x.numero) || 0));
+    if (!['diagnostico', 'reparacion', 'modificacion'].includes(x.categoria)) x.categoria = 'diagnostico';
+    if (!['abierta', 'cerrada', 'cancelada'].includes(x.estado)) x.estado = 'abierta';
+    ['motivo', 'descripcion', 'tecnico'].forEach((k) => (x[k] = String(x[k] || '').slice(0, 5000)));
   });
   return d;
 }
@@ -266,6 +322,39 @@ function abrirWhatsApp(tel, texto) {
   }
   if (ES_MOVIL) window.location.href = url; // en móviles abre la app directamente
   else window.open(url, '_blank', 'noopener');
+}
+
+// Menú pequeño para cambiar un estado desde un listado (se abre junto al botón)
+function menuEstado(ancla, opciones, alElegir) {
+  $('#menu-estado')?.remove();
+  const m = document.createElement('div');
+  m.id = 'menu-estado'; m.className = 'menu-estado';
+  m.innerHTML = opciones.map((o) => `<button type="button" data-v="${esc(o.valor)}" class="estado-op ${esc(o.clase || '')}" ${o.actual ? 'disabled' : ''}>${esc(o.texto)}${o.actual ? ' (actual)' : ''}</button>`).join('');
+  document.body.appendChild(m);
+  const r = ancla.getBoundingClientRect();
+  m.style.top = (window.scrollY + r.bottom + 4) + 'px';
+  m.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - m.offsetWidth - 8)) + 'px';
+  const cerrar = (e) => { if (e && m.contains(e.target)) return; m.remove(); document.removeEventListener('click', cerrar, true); };
+  setTimeout(() => document.addEventListener('click', cerrar, true), 0);
+  m.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b || b.disabled) return; m.remove(); document.removeEventListener('click', cerrar, true); alElegir(b.dataset.v); };
+}
+
+// Pide un dato en una ventana (devuelve el texto, o null si se cancela)
+function pedirDato({ titulo, texto, etiqueta, valor = '', placeholder = '', boton = 'Aceptar' }) {
+  return new Promise((resolver) => {
+    abrirModal(`
+      <h3>${esc(titulo)}</h3>
+      ${texto ? `<p class="hint">${texto}</p>` : ''}
+      <form id="form-dato"><label>${esc(etiqueta)}<input name="dato" value="${esc(valor)}" placeholder="${esc(placeholder)}" required></label>
+        <div class="actions" style="margin-top:12px"><button type="button" class="btn ghost" id="dato-cancelar">Cancelar</button><button class="btn primary">${esc(boton)}</button></div>
+      </form>`);
+    const f = $('#form-dato'); f.dato.focus(); f.dato.select();
+    let listo = false;
+    const fin = (v) => { if (listo) return; listo = true; cerrarModal(); resolver(v); };
+    f.onsubmit = (e) => { e.preventDefault(); const v = f.dato.value.trim(); if (v) fin(v); };
+    $('#dato-cancelar').onclick = () => fin(null);
+    $('#modal').addEventListener('close', () => fin(null), { once: true });
+  });
 }
 
 function toast(msg) {
@@ -412,9 +501,16 @@ async function importar(file) {
 
 // ===================== PESTAÑAS =====================
 function irA(tab) {
+  // "Nuevo registro" y "Registros" ahora son subpestañas de "Servicios"
+  if (tab === 'nuevo' || tab === 'registros') { irSubtabSv(tab === 'nuevo' ? 'nuevo' : 'historial'); tab = 'servicios'; }
   $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + tab));
   window.scrollTo(0, 0);
+}
+function irSubtabSv(cual) {
+  $$('.subtab[data-svtab]').forEach((b) => b.classList.toggle('active', b.dataset.svtab === cual));
+  $('#sv-nuevo').hidden = cual !== 'nuevo';
+  $('#sv-historial').hidden = cual !== 'historial';
 }
 
 // ===================== BÚSQUEDA =====================
@@ -793,7 +889,11 @@ function renderRegistros() {
       <td>${fmtKm(u?.proximoKm)}</td>
       <td><div class="celda-aceite">${fotoAceiteHTML(u, 'aceite-mini')}<span>${esc(u ? [u.aceiteLinea || u.aceiteMarca, u.aceiteViscosidad].filter(Boolean).join(' ') || u.aceite : '—')}</span></div></td>
       <td><span class="estado ${e.clave}">${esc(e.texto)}</span></td>
-      <td><button class="btn tiny wa" data-act="mensaje" data-vid="${v.id}">Mensaje</button></td>
+      <td class="acciones-fila">
+        <button class="btn tiny ghost" data-act="ver" data-vid="${v.id}" title="Ver y modificar">✏️</button>
+        <button class="btn tiny ghost" data-act="pdf-servicios" data-vid="${v.id}" title="PDF del historial">PDF</button>
+        <button class="btn tiny wa" data-act="mensaje" data-vid="${v.id}">Mensaje</button>
+      </td>
     </tr>`).join('');
   $('#vacio-registros').hidden = filas.length > 0;
   $('#vacio-registros').textContent = db.vehiculos.length ? 'Ningún registro coincide con la búsqueda.' : 'No hay registros todavía.';
@@ -821,8 +921,7 @@ function verDetalle(vid) {
       <button class="btn small primary" data-act="nuevo-cambio" data-vid="${v.id}">+ Nuevo cambio de aceite</button>
       <button class="btn small ghost" data-act="agendar" data-vid="${v.id}">Agendar cita</button>
       <button class="btn small wa" data-act="mensaje" data-vid="${v.id}">Enviar mensaje</button>
-      <button class="btn small ghost" data-act="revision" data-vid="${v.id}">Nueva revisión</button>
-      <button class="btn small ghost" data-act="presupuesto" data-vid="${v.id}">Nuevo presupuesto</button>
+      <button class="btn small ghost" data-act="pdf-servicios" data-vid="${v.id}">⬇ PDF</button>
       <button class="btn small ghost" data-act="editar-cv" data-vid="${v.id}">Editar cliente / vehículo</button>
     </div>
     <div class="historial">
@@ -840,23 +939,39 @@ function verDetalle(vid) {
         </div>`).join('') || '<p class="hint">Sin servicios.</p>'}
     </div>
     ${(() => {
-      const revs = (db.revisiones || []).filter((r) => r.vehiculoId === v.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
-      if (!revs.length || typeof conteo !== 'function') return '';
-      return `<div class="historial"><h4>Revisiones (${revs.length})</h4>${revs.map((r) => {
-        const c = conteo(r);
-        return `<div class="servicio"><div class="top"><strong>${fmtFecha(r.fecha)} · ${r.tipo === 'completa' ? 'Revisión completa' : 'Revisión básica'} ${numRev(r.numero)}</strong>
-          <button class="btn tiny ghost" data-act="ver-rev" data-rid="${r.id}">Ver</button></div>
-          <small>Técnico: ${esc(r.tecnico)} · ${c.reemplazo} reemplazo · ${c.regular} regular · ${c.bueno} bueno</small></div>`;
-      }).join('')}</div>`;
-    })()}
-    ${(() => {
-      const msgs = (db.mensajes || []).filter((m) => m.vehiculoId === v.id).sort((a, b) => b.creado.localeCompare(a.creado));
+      // Solo los mensajes relacionados con cambios de aceite (esta pestaña es exclusiva de servicios)
+      const msgs = (db.mensajes || []).filter((m) => m.vehiculoId === v.id && ['recordatorio', 'libre', 'prueba'].includes(m.tipo)).sort((a, b) => b.creado.localeCompare(a.creado));
       return msgs.length ? `<div class="historial"><h4>Mensajes enviados (${msgs.length})</h4>${msgs.slice(0, 10).map((m) => `
         <div class="servicio"><strong>${fmtFecha(m.fecha)} · ${esc(PLANTILLAS[m.tipo]?.nombre || ({ presupuesto: 'Presupuesto', cita: 'Recordatorio de cita', revision: 'Diagnóstico de revisión' }[m.tipo] || m.tipo))}</strong><br><small>${esc(m.texto)}</small></div>`).join('')}</div>` : '';
     })()}
     <div class="actions" style="justify-content:flex-start;border-top:1px solid var(--line);padding-top:12px">
       <button class="btn tiny danger" data-act="borrar-v" data-vid="${v.id}">Eliminar vehículo y su historial</button>
     </div>`);
+}
+
+// PDF con el historial de cambios de aceite de un vehículo
+function pdfServicios(vid) {
+  const v = vehiculo(vid); if (!v) return;
+  const c = cliente(v.clienteId) || {};
+  const hist = serviciosDe(vid);
+  const html = `<div class="doc doc-print">
+    <div class="doc-head">
+      <img class="doc-logo" src="img/logo.png" alt="Jacks">
+      <div class="doc-empresa"><div class="doc-nombre">${EMPRESA.nombre}</div><div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div></div>
+    </div>
+    <div class="doc-numero">HISTORIAL DE CAMBIOS DE ACEITE</div>
+    <div class="doc-box">
+      <div class="doc-fila2"><div>CLIENTE: ${esc(c.nombre)}</div><div class="r">FECHA: ${fmtFecha(hoyISO())}</div></div>
+      <div class="doc-fila2"><div>TELÉFONO: ${esc(c.telefono)}</div><div class="r">VEHÍCULO: ${esc(v.marca)} ${esc(v.modelo)} · ${esc(v.placa)}</div></div>
+    </div>
+    <table class="doc-items">
+      <thead><tr><th>FECHA</th><th>KM</th><th>PRÓXIMO KM</th><th>ACEITE</th><th>FILTRO</th></tr></thead>
+      <tbody>${hist.map((s) => `<tr><td>${fmtFecha(s.fecha)}</td><td>${fmtKm(s.km)}</td><td>${fmtKm(s.proximoKm)}</td>
+        <td>${esc(resumenAceite(s))}</td><td>${esc([s.filtro, s.sku && 'SKU ' + s.sku].filter(Boolean).join(' · '))}</td></tr>
+        ${s.revisiones ? `<tr><td></td><td colspan="4"><small>Revisiones: ${esc(s.revisiones)}</small></td></tr>` : ''}`).join('')}</tbody>
+    </table>
+  </div>`;
+  imprimirDocumento(html, `Servicios ${v.placa} - ${c.nombre || ''}`);
 }
 
 function editarClienteVehiculo(vid) {
@@ -955,7 +1070,55 @@ function renderRecordatorios() {
   $('#lista-pendientes').innerHTML = pendientes.map((x) => tarjetaRecordatorio(x, 'pendiente')).join('') || '<p class="vacio">No hay recordatorios pendientes hoy. 👍</p>';
   $('#lista-proximos').innerHTML = proximos.map((x) => tarjetaRecordatorio(x, 'proximo')).join('') || '<p class="vacio">Nada en los próximos 30 días.</p>';
   $('#lista-enviados').innerHTML = enviados.map((x) => tarjetaRecordatorio(x, 'enviado')).join('') || '<p class="vacio">Aún no se han enviado recordatorios.</p>';
-  const b = $('#badge-recordatorios'); b.textContent = pendientes.length; b.hidden = !pendientes.length;
+  // Seguimiento de reparaciones a los 6 meses
+  const reps = candidatosReparacion().filter((x) => !x.enviado && x.vence <= hoyISO()).sort((a, b) => a.vence.localeCompare(b.vence));
+  $('#lista-reparaciones-rec').innerHTML = reps.map(tarjetaRecReparacion).join('') || '<p class="vacio">No hay seguimientos de reparaciones pendientes.</p>';
+  const total = pendientes.length + reps.length;
+  const b = $('#badge-recordatorios'); b.textContent = total; b.hidden = !total;
+}
+
+// ---------- Recordatorio de seguimiento 6 meses después de la última reparación ----------
+// Se registra en "mensajes" (no en la reparación, que puede estar cerrada y bloqueada).
+function candidatosReparacion() {
+  const ultimas = {};
+  (db.reparaciones || []).filter((r) => r.estado === 'culminado' && r.fechaCierre).forEach((r) => {
+    const k = r.vehiculoId || r.id;
+    if (!ultimas[k] || r.fechaCierre > ultimas[k].fechaCierre) ultimas[k] = r;
+  });
+  return Object.values(ultimas).map((r) => ({
+    r, vence: sumarMeses(r.fechaCierre, 6),
+    enviado: (db.mensajes || []).find((m) => m.tipo === 'recordatorio-reparacion' && m.reparacionId === r.id),
+  }));
+}
+function datosContactoRep(r) {
+  const v = r.vehiculoId && vehiculo(r.vehiculoId); const c = v && cliente(v.clienteId);
+  return { nombre: c?.nombre || r.cliente, telefono: c?.telefono || r.telefono, vehiculo: v ? `${v.marca} ${v.modelo}` : (r.vehiculo || '').split(' · ')[0], placa: v?.placa || (r.vehiculo || '').split(' · ')[1] || '' };
+}
+function mensajeRecReparacion(r) {
+  const d = datosContactoRep(r);
+  return rellenarMensaje('reparacion', { nombre: d.nombre, vehiculo: d.vehiculo, placa: d.placa, fecha: fmtFecha(r.fechaCierre) });
+}
+function tarjetaRecReparacion({ r, vence }) {
+  const d = datosContactoRep(r);
+  return `<div class="recordatorio">
+    <div class="top"><div><strong>${esc(d.nombre)}</strong> · ${esc(d.telefono)} · ${esc(d.vehiculo)} · <strong>${esc(d.placa)}</strong></div>
+      <span class="estado vencido">Desde ${fmtFecha(vence)}</span></div>
+    <small class="hint">Reparación ${typeof numRep === 'function' ? numRep(r.numero) : ''} culminada el ${fmtFecha(r.fechaCierre)}</small>
+    <div class="mensaje">${esc(mensajeRecReparacion(r))}</div>
+    <div class="actions" style="margin-top:8px">
+      <button class="btn small wa" data-act="enviar-rep" data-repid="${r.id}">Enviar por WhatsApp</button>
+      <button class="btn small ghost" data-act="marcar-rep" data-repid="${r.id}">Marcar como enviado</button>
+    </div>
+  </div>`;
+}
+async function registrarRecReparacion(r, abrir) {
+  const d = datosContactoRep(r);
+  if (abrir) {
+    if (soloDigitos(d.telefono).length < 10) { alert('Este cliente no tiene un teléfono válido registrado.'); return; }
+    abrirWhatsApp(d.telefono, mensajeRecReparacion(r));
+  }
+  db.mensajes.push({ id: uid(), vehiculoId: r.vehiculoId || null, reparacionId: r.id, telefono: d.telefono, tipo: 'recordatorio-reparacion', texto: `Seguimiento 6 meses · reparación ${typeof numRep === 'function' ? numRep(r.numero) : ''}`, fecha: hoyISO(), creado: new Date().toISOString() });
+  await guardar();
 }
 
 async function marcarEnviado(sid, valor) {
@@ -1070,7 +1233,7 @@ function renderDia() {
   $('#dia-citas').innerHTML = cs.map((ct) => {
     const t = tituloCita(ct);
     return `<div class="cita ${ct.estado}" data-cid="${ct.id}">
-      <strong>${esc(ct.hora ? fmtHora12(ct.hora) : 'Sin hora')} · ${esc(ct.servicio)}</strong>
+      <strong>${esc(ct.hora ? fmtHora12(ct.hora) : 'Sin hora')} · ${esc(motivoCita(ct))}</strong>
       <small>${esc(t.nombre)}${t.veh ? ' · ' + esc(t.veh) : ''}</small>
       ${ct.notas ? `<small>${esc(ct.notas)}</small>` : ''}
       ${ct.estado !== 'pendiente' ? `<small>${ct.estado === 'completada' ? '✔ Completada' : '✖ Cancelada'}</small>` : ''}
@@ -1105,24 +1268,27 @@ function vehiculoCita(ct) {
 }
 
 // Mensaje para el cliente (recordatorio de su cita)
-function mensajeCitaCliente(ct) {
+// Motivo de la cita (si es "Otro", el texto que se escribió)
+const motivoCita = (ct) => (ct.servicio === 'Otro' ? (ct.motivoOtro || 'Otro') : ct.servicio);
+
+function varsCita(ct) {
   const t = tituloCita(ct); const v = vehiculoCita(ct);
-  const nombre = t.nombre && t.nombre !== 'Sin cliente' ? ' ' + t.nombre : '';
-  const cuando = `el ${fechaLarga(ct.fecha).toLowerCase()}${ct.hora ? ' a las ' + fmtHora12(ct.hora) : ''}`;
-  const dir = typeof EMPRESA !== 'undefined' ? ` en ${EMPRESA.direccion}` : '';
-  return `Hola${nombre}, te recordamos tu cita en ${CONFIG.taller} ${cuando} para ${ct.servicio.toLowerCase()}${v.modelo ? ' de tu ' + v.modelo : ''}.\n\n` +
-    `Te esperamos${dir}. Si necesitas cambiar la fecha u hora, respóndenos este mensaje.\n\n— ${CONFIG.taller}`;
+  return {
+    nombre: t.nombre && t.nombre !== 'Sin cliente' ? t.nombre : '', vehiculo: v.modelo || 'vehículo', placa: v.placa,
+    fecha: fechaLarga(ct.fecha).toLowerCase(), hora: ct.hora ? fmtHora12(ct.hora) : 'hora por confirmar',
+    motivo: motivoCita(ct).toLowerCase(),
+  };
 }
 
-// Mensaje corto para el grupo del equipo (sin datos personales del cliente)
+// Mensaje para el cliente (recordatorio de su cita) — editable en Configuración
+function mensajeCitaCliente(ct) {
+  return rellenarMensaje('citaCliente', varsCita(ct)).replace(/^Hola ,/, 'Hola,');
+}
+
+// Mensaje corto para el grupo del equipo (sin datos personales del cliente) — editable
 function mensajeCitaGrupo(ct) {
-  const v = vehiculoCita(ct);
-  return [
-    `*Cita agendada* — ${CONFIG.taller}`,
-    `Vehículo: ${v.modelo || 'Vehículo sin especificar'}${v.placa ? ' · ' + v.placa : ''}`,
-    `Fecha: ${fechaLarga(ct.fecha)}${ct.hora ? ' · ' + fmtHora12(ct.hora) : ''}`,
-    `Motivo: ${ct.servicio}`,
-  ].join('\n');
+  const vars = varsCita(ct);
+  return rellenarMensaje('citaEquipo', { ...vars, fecha: fechaLarga(ct.fecha), motivo: motivoCita(ct) }).replace(/ · $/m, '');
 }
 
 async function enviarCitaCliente(ct) {
@@ -1149,7 +1315,27 @@ async function enviarCitaGrupo(ct) {
   toast('Elige el grupo del equipo en WhatsApp y envía');
 }
 
+// El rol "taller" solo puede ver el calendario de citas (sin crear ni modificar)
+const soloLectura = () => document.body.classList.contains('rol-taller');
+
+function verCitaSoloLectura(ct) {
+  const t = tituloCita(ct);
+  abrirModal(`
+    <div class="form-head"><h3>Cita</h3><button class="btn small ghost" data-act="cerrar">Cerrar</button></div>
+    <div class="detalle-grid">
+      <div><small>Fecha</small>${esc(fechaLarga(ct.fecha))}</div>
+      <div><small>Hora</small>${esc(ct.hora ? fmtHora12(ct.hora) : 'Sin hora')}</div>
+      <div><small>Motivo</small>${esc(motivoCita(ct))}</div>
+      <div><small>Estado</small>${esc({ pendiente: 'Pendiente', completada: 'Completada', cancelada: 'Cancelada' }[ct.estado] || ct.estado)}</div>
+      <div><small>Cliente</small>${esc(t.nombre)}</div>
+      <div><small>Vehículo</small>${esc(t.veh || '—')}</div>
+    </div>
+    ${ct.notas ? `<p><small class="hint">Notas</small><br>${esc(ct.notas)}</p>` : ''}
+    <p class="hint">Solo lectura: las citas las gestiona un administrador.</p>`);
+}
+
 function formCita(ct = null, preVid = null) {
+  if (soloLectura()) { if (ct) verCitaSoloLectura(ct); return; }
   const nueva = !ct;
   ct = ct || { id: uid(), fecha: diaSel, hora: '', vehiculoId: preVid, servicio: 'Cambio de aceite', notas: '', estado: 'pendiente', nombreLibre: '', telefonoLibre: '', vehiculoLibre: '' };
   let vidSel = ct.vehiculoId || null;
@@ -1172,7 +1358,8 @@ function formCita(ct = null, preVid = null) {
       <div class="grid">
         <label>Fecha<input name="fecha" type="date" required value="${ct.fecha}"></label>
         <label>Hora<input name="hora" type="time" value="${esc(ct.hora)}"></label>
-        <label>Servicio<select name="servicio">${TIPOS_CITA.map((t) => `<option ${t === ct.servicio ? 'selected' : ''}>${t}</option>`).join('')}${TIPOS_CITA.includes(ct.servicio) ? '' : `<option selected>${esc(ct.servicio)}</option>`}</select></label>
+        <label>Motivo<select name="servicio" id="cita-motivo">${[...motivosCita(), 'Otro'].map((t) => `<option ${t === ct.servicio ? 'selected' : ''}>${esc(t)}</option>`).join('')}${[...motivosCita(), 'Otro'].includes(ct.servicio) ? '' : `<option selected>${esc(ct.servicio)}</option>`}</select></label>
+        <label id="cita-motivo-otro-wrap" ${ct.servicio === 'Otro' ? '' : 'hidden'}>Escribe el motivo *<input name="motivoOtro" value="${esc(ct.motivoOtro || '')}" placeholder="Ej: instalación de suspensión"></label>
         <label>Estado<select name="estado">
           <option value="pendiente" ${ct.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
           <option value="completada" ${ct.estado === 'completada' ? 'selected' : ''}>Completada</option>
@@ -1203,6 +1390,11 @@ function formCita(ct = null, preVid = null) {
     const o = $('#otro-veh'); if (o) o.onclick = () => { otroDe = vehiculo(vidSel).clienteId; vidSel = null; pintarVeh(); $('#cita-otro-veh [data-veh="marca"]').focus(); };
   };
   pintarVeh();
+  $('#cita-motivo').onchange = (e) => {
+    const otro = e.target.value === 'Otro';
+    $('#cita-motivo-otro-wrap').hidden = !otro;
+    if (otro) $('#cita-motivo-otro-wrap input').focus();
+  };
   $('#cita-buscar').oninput = (e) => {
     const lista = buscarVehiculos(e.target.value).slice(0, 6);
     $('#cita-res').innerHTML = lista.map((v) => `<div class="resultado" data-pick="${v.id}"><div><strong>${esc(cliente(v.clienteId).nombre)}</strong><br><small>${esc(v.marca)} ${esc(v.modelo)}</small></div><strong>${esc(v.placa)}</strong></div>`).join('');
@@ -1220,13 +1412,15 @@ function formCita(ct = null, preVid = null) {
       vidSel = vid; otroDe = null;
     }
     if (!vidSel && !(d.nombreLibre || '').trim()) { alert('Selecciona un cliente registrado o escribe el nombre.'); return; }
+    const motivoOtro = d.servicio === 'Otro' ? (d.motivoOtro || '').trim() : '';
+    if (d.servicio === 'Otro' && !motivoOtro) { alert('Escribe el motivo de la cita.'); $('#cita-motivo-otro-wrap input').focus(); return; }
     // Si cambia la fecha, la hora o el motivo, los avisos enviados quedan desactualizados
-    if (!nueva && (ct.fecha !== d.fecha || ct.hora !== d.hora || ct.servicio !== d.servicio)) {
+    if (!nueva && (ct.fecha !== d.fecha || ct.hora !== d.hora || ct.servicio !== d.servicio || (ct.motivoOtro || '') !== motivoOtro)) {
       if (ct.avisoCliente || ct.avisoGrupo) toast('La cita cambió: vuelve a avisar al cliente y al equipo');
       ct.avisoCliente = null; ct.avisoGrupo = null;
     }
     Object.assign(ct, {
-      fecha: d.fecha, hora: d.hora, servicio: d.servicio, estado: d.estado, notas: d.notas.trim(), vehiculoId: vidSel,
+      fecha: d.fecha, hora: d.hora, servicio: d.servicio, motivoOtro, estado: d.estado, notas: d.notas.trim(), vehiculoId: vidSel,
       nombreLibre: vidSel ? '' : d.nombreLibre.trim(), telefonoLibre: vidSel ? '' : d.telefonoLibre.trim(), vehiculoLibre: vidSel ? '' : d.vehiculoLibre.trim(),
     });
     if (nueva) { ct.creado = new Date().toISOString(); db.citas.push(ct); }
@@ -1255,6 +1449,7 @@ function renderTodo() {
   if (typeof renderPresupuestos === 'function') renderPresupuestos(); // definido en presupuestos.js
   if (typeof renderRevisiones === 'function') renderRevisiones(); // definido en revisiones.js
   if (typeof renderReparaciones === 'function') renderReparaciones(); // definido en reparaciones.js
+  if (typeof renderIngresos === 'function') renderIngresos(); // definido en ingresos.js
   aceiteNuevo.refrescar();
 }
 
@@ -1264,6 +1459,7 @@ function init() {
   $('#btn-nuevo-aceite').onclick = () => formAceite();
   
   $('#catalogo-aceites').onclick = (e) => { const p = e.target.closest('[data-aid]'); if (p) formAceite(aceitePorId(p.dataset.aid)); };
+  $$('.subtab[data-svtab]').forEach((b) => (b.onclick = () => irSubtabSv(b.dataset.svtab)));
   // Al entrar a una pestaña se muestra la vista limpia (lista / formulario nuevo),
   // salvo que haya cambios sin guardar en lo que se estaba editando.
   $$('.tab').forEach((b) => (b.onclick = () => {
@@ -1312,6 +1508,13 @@ function init() {
       case 'agendar': agendarDesdeVehiculo(vid); break;
       case 'editar-cv': editarClienteVehiculo(vid); break;
       case 'mensaje': formMensaje(vid); break;
+      case 'pdf-servicios': pdfServicios(vid); break;
+      case 'enviar-rep':
+      case 'marcar-rep': {
+        const r = (db.reparaciones || []).find((x) => x.id === el.dataset.repid);
+        if (r) await registrarRecReparacion(r, act === 'enviar-rep');
+        break;
+      }
       case 'presupuesto': cerrarModal(); irA('presupuestos'); nuevoPresupuesto(vid); break;
       case 'revision': cerrarModal(); irA('revisiones'); nuevaRevision(vid); break;
       case 'ver-rev': e.preventDefault(); cerrarModal(); irA('revisiones'); abrirRevision(el.dataset.rid); break;

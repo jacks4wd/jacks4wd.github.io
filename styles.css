@@ -693,3 +693,38 @@ button.rep-estado { cursor: pointer; }
 .pres-est-b.cancelado { border-color: #6b7280; color: #374151; }
 .rep-cerrada { background: #f3f4f6; border-left: 4px solid #6b7280; padding: 10px 12px; border-radius: 6px; }
 .pres-origen { background: #eff6ff; border-left: 4px solid #2563eb; padding: 8px 12px; border-radius: 6px; margin: 0 auto 12px; max-width: 900px; font-size: 14px; }
+.cfg-mensaje textarea { font-family: inherit; }
+.cfg-vista { margin-top: 6px; font-size: 13px; }
+.var-chip { font: inherit; font-size: 12px; border: 1px solid #d1d5db; background: #f9fafb; border-radius: 6px; padding: 1px 6px; cursor: pointer; margin: 2px 0; }
+.var-chip:hover { border-color: var(--primary); }
+.menu-estado { position: absolute; z-index: 200; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 6px; display: grid; gap: 4px; min-width: 170px; }
+.estado-op { font: inherit; font-weight: 600; text-align: left; border: 0; background: #f9fafb; padding: 9px 12px; border-radius: 8px; cursor: pointer; }
+.estado-op:hover:not(:disabled) { background: #fff7ed; }
+.estado-op:disabled { opacity: .5; cursor: default; }
+button.estado-cambiar { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+button.estado-cambiar::after { content: " ▾"; }
+/* Rol taller: reparaciones y citas solo lectura */
+body.rol-taller #rep-editor [data-rep="guardar"],
+body.rol-taller #rep-editor [data-rep="borrar"],
+body.rol-taller #rep-editor [data-rep="nuevo-presupuesto"],
+body.rol-taller #rep-editor [data-rep="presupuesto"],
+body.rol-taller #rep-editor .rep-estado-acciones,
+body.rol-taller #rep-editor .rep-estado-acciones + .hint,
+body.rol-taller [data-prtab="presupuestos"],
+body.rol-taller #btn-nueva-cita,
+body.rol-taller .cita-acciones,
+body.rol-taller [data-act="agendar"],
+body.rol-taller [data-ing="presupuesto"],
+body.rol-taller [data-ing="reparacion"] { display: none !important; }
+.estado-rvs { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.estado-rvs.abierta { background: #eff6ff; color: #1d4ed8; }
+.estado-rvs.cerrada { background: var(--ok-bg); color: var(--ok); }
+.estado-rvs.cancelada { background: #f3f4f6; color: #4b5563; }
+.rv-bloqueo { background: #f3f4f6; border-left: 4px solid #6b7280; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.rv-bloqueada .rv-b, .rv-bloqueada .rv-chip, .rv-bloqueada .rv-tipo, .rv-bloqueada .rv-check { pointer-events: none; }
+.rv-bloqueada .rv-item:not(.hecho) { opacity: .55; }
+body.rol-taller .solo-admin { display: none !important; }
+@media screen and (max-width: 700px) {
+  .rv-barra { margin: 0 -10px; flex-wrap: wrap; padding: 8px 10px; }
+  .rv-barra #rv-progreso { width: 100%; }
+}

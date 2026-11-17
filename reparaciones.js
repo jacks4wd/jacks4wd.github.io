@@ -64,7 +64,13 @@ function renderReparaciones() {
       <td>${esc(r.tecnico || '—')}</td>
       <td><span class="rv-mini rv-bueno" title="Aprobados">${ap}</span>${re ? `<span class="rv-mini rv-urgente" title="Rechazados, pendientes">${re}</span>` : ''}</td>
       <td>${esc(r.notaEntrega || '—')}</td>
-      <td><span class="estado-rep ${r.estado}">${ESTADOS_REP[r.estado]}</span></td>
+      <td>${r.estado === 'en_proceso' && !soloLectura()
+        ? `<button type="button" class="estado-rep estado-cambiar ${r.estado}" data-replista="estado" title="Cambiar estado">${ESTADOS_REP[r.estado]}</button>`
+        : `<span class="estado-rep ${r.estado}">${ESTADOS_REP[r.estado]}</span>`}</td>
+      <td class="acciones-fila">
+        <button class="btn tiny ghost" data-replista="editar" title="${soloLectura() ? 'Ver' : 'Modificar'}">${soloLectura() ? '👁' : '✏️'}</button>
+        <button class="btn tiny ghost" data-replista="pdf">PDF</button>
+      </td>
     </tr>`;
   }).join('');
   const v = $('#vacio-rep');
@@ -106,6 +112,7 @@ function itemsRepHTML(r, editable) {
 function pintarEditorRep() {
   const r = repEdit;
   const cerrada = esCerrada(r);
+  const bloqueada = cerrada || soloLectura(); // el rol taller solo puede ver
   const otro = r.tecnico && !tecnicos().includes(r.tecnico);
   const rechazados = r.items.filter((i) => i.estado === 'rechazado').length;
   const derivados = presupuestosDerivados(r);
@@ -146,23 +153,23 @@ function pintarEditorRep() {
         <div class="doc-fila2"><div>CLIENTE: ${esc(r.cliente)}</div><div class="r">FECHA: ${fmtFecha(r.fecha)}</div></div>
         <div class="doc-fila2"><div>TELÉFONO: ${esc(r.telefono)}</div><div class="r">VEHÍCULO: ${esc(r.vehiculo)}</div></div>
         <div class="doc-fila2">
-          ${cerrada ? `<div>TÉCNICO: ${esc(r.tecnico)}</div>` : `<label>TÉCNICO: <select id="rep-tecnico">${opcionesTecnico(r.tecnico)}</select>
+          ${bloqueada ? `<div>TÉCNICO: ${esc(r.tecnico)}</div>` : `<label>TÉCNICO: <select id="rep-tecnico">${opcionesTecnico(r.tecnico)}</select>
             <input id="rep-tecnico-otro" value="${otro ? esc(r.tecnico) : ''}" placeholder="Nombre" ${otro ? '' : 'hidden'}></label>`}
           <div class="r">ESTADO: <strong>${ESTADOS_REP[r.estado]}</strong></div>
         </div>
       </div>
       <table class="doc-items rep-tabla">
         <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>SKU</th><th>ESTADO</th></tr></thead>
-        <tbody>${itemsRepHTML(r, !cerrada)}</tbody>
+        <tbody>${itemsRepHTML(r, !bloqueada)}</tbody>
       </table>
       ${cerrada ? '' : '<p class="hint">Toca el estado de un ítem para cambiarlo (por ejemplo, si el cliente aprueba después un ítem rechazado).</p>'}
       <div class="doc-obs" style="border-top:1px solid #111">
         <div class="lbl">Notas de la reparación</div>
-        <textarea id="rep-notas" rows="3" placeholder="Ej: garantía de 3 meses en piezas; reemplazo solo bujes, no muñones: el ruido continuará…">${esc(r.notas)}</textarea>
+        <textarea id="rep-notas" rows="3" ${soloLectura() ? 'readonly' : ''} placeholder="Ej: garantía de 3 meses en piezas; reemplazo solo bujes, no muñones: el ruido continuará…">${esc(r.notas)}</textarea>
       </div>
       <div class="rep-nota-entrega">
         <label>N° de nota de entrega (sistema administrativo)
-          <input id="rep-nota-entrega" value="${esc(r.notaEntrega)}" placeholder="Ej: 437" inputmode="numeric">
+          <input id="rep-nota-entrega" value="${esc(r.notaEntrega)}" ${soloLectura() ? 'readonly' : ''} placeholder="Ej: 437" inputmode="numeric">
         </label>
       </div>
     </form>`;
@@ -178,27 +185,42 @@ function leerEditorRep() {
   r.notaEntrega = $('#rep-nota-entrega').value.trim();
 }
 
-// Cierra la reparación como culminada o cancelada (definitivo)
-async function cerrarReparacion(estado) {
-  leerEditorRep();
-  const r = repEdit;
+// Cierra una reparación como culminada o cancelada (definitivo).
+// Culminado EXIGE el número de nota de entrega del sistema administrativo.
+// Sirve desde el editor (aplica lo editado en pantalla) y desde el listado.
+async function cerrarRep(id, estado) {
+  const actual = db.reparaciones.find((x) => x.id === id); if (!actual) return false;
+  if (esCerrada(actual)) { toast('Esta reparación ya estaba cerrada'); return false; }
+  const enEditor = repEdit && repEdit.id === id;
+  if (enEditor) leerEditorRep();
+  let nota = ((enEditor ? repEdit.notaEntrega : actual.notaEntrega) || '').trim();
+  if (estado === 'culminado' && !nota) {
+    nota = await pedirDato({
+      titulo: `Culminar reparación ${numRep(actual.numero)}`,
+      texto: 'Para marcarla como culminada es obligatorio el número de la nota de entrega del sistema administrativo.',
+      etiqueta: 'N° de nota de entrega', placeholder: 'Ej: 437', boton: 'Continuar',
+    });
+    if (!nota) return false;
+  }
   const texto = estado === 'culminado'
-    ? `¿Marcar la reparación ${numRep(r.numero)} como CULMINADA?\n\nÚsalo cuando el vehículo esté listo, probado y entregado.\nDespués no se podrán modificar los ítems, el técnico ni el estado.`
-    : `¿CANCELAR la reparación ${numRep(r.numero)}?\n\nÚsalo cuando el cliente retiró el vehículo sin realizar la reparación.\nTodos los ítems pasarán a "Rechazado" y después no se podrá modificar.`;
-  if (!confirm(texto)) return;
-  const actual = db.reparaciones.find((x) => x.id === r.id); if (!actual) return;
-  if (esCerrada(actual)) { toast('Esta reparación ya estaba cerrada'); abrirReparacion(r.id); return; }
-  const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
-  if (mismosItems) actual.items.forEach((it, i) => (it.estado = r.items[i].estado));
+    ? `¿Marcar la reparación ${numRep(actual.numero)} como CULMINADA (nota de entrega ${nota})?\n\nÚsalo cuando el vehículo esté listo, probado y entregado.\nDespués no se podrán modificar los ítems, el técnico ni el estado.`
+    : `¿CANCELAR la reparación ${numRep(actual.numero)}?\n\nÚsalo cuando el cliente retiró el vehículo sin realizar la reparación.\nTodos los ítems pasarán a "Rechazado" y después no se podrá modificar.`;
+  if (!confirm(texto)) return false;
+  if (enEditor) {
+    const r = repEdit;
+    const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
+    if (mismosItems) actual.items.forEach((it, i) => (it.estado = r.items[i].estado));
+    Object.assign(actual, { tecnico: r.tecnico, notas: r.notas });
+  }
   if (estado === 'cancelado') actual.items.forEach((it) => (it.estado = 'rechazado'));
   Object.assign(actual, {
-    tecnico: r.tecnico, notas: r.notas, notaEntrega: r.notaEntrega, estado,
+    notaEntrega: nota, estado,
     fechaCierre: hoyISO(), cerradoPor: (typeof Nube !== 'undefined' && Nube.perfil?.nombre) || '', actualizado: new Date().toISOString(),
   });
   repDirty = false;
   await guardar();
-  abrirReparacion(r.id);
-  toast(`Reparación ${numRep(r.numero)} ${estado === 'culminado' ? 'culminada' : 'cancelada'}`);
+  toast(`Reparación ${numRep(actual.numero)} ${estado === 'culminado' ? 'culminada' : 'cancelada'}`);
+  return true;
 }
 
 // Nuevo presupuesto con los ítems rechazados (por si el cliente vuelve por ellos)
@@ -288,7 +310,18 @@ function initReparaciones() {
   }));
   $('#buscar-rep').oninput = renderReparaciones;
   $('#filtro-rep').onchange = renderReparaciones;
-  $('#tabla-rep').onclick = (e) => { const tr = e.target.closest('[data-repid]'); if (tr) abrirReparacion(tr.dataset.repid); };
+  $('#tabla-rep').onclick = (e) => {
+    const tr = e.target.closest('[data-repid]'); if (!tr) return;
+    const r = db.reparaciones.find((x) => x.id === tr.dataset.repid); if (!r) return;
+    const b = e.target.closest('[data-replista]');
+    if (b?.dataset.replista === 'pdf') return imprimirDocumento(docRepHTML(r), `Reparacion ${numRep(r.numero).slice(1)}${r.cliente ? ' - ' + r.cliente : ''}`);
+    if (b?.dataset.replista === 'estado') {
+      return menuEstado(b, Object.entries(ESTADOS_REP).map(([valor, texto]) => ({ valor, texto, clase: valor, actual: valor === r.estado })), async (nuevo) => {
+        if (nuevo !== 'en_proceso' && await cerrarRep(r.id, nuevo)) renderReparaciones();
+      });
+    }
+    abrirReparacion(r.id);
+  };
 
   const ed = $('#rep-editor');
   ed.addEventListener('input', () => { repDirty = true; });
@@ -302,8 +335,12 @@ function initReparaciones() {
     switch (b.dataset.rep) {
       case 'volver': volverAListaRep(); break;
       case 'guardar': await guardarReparacion(); volverAListaRep(); break;
-      case 'culminar': await cerrarReparacion('culminado'); break;
-      case 'cancelar': await cerrarReparacion('cancelado'); break;
+      case 'culminar':
+      case 'cancelar': {
+        const id = repEdit.id;
+        if (await cerrarRep(id, b.dataset.rep === 'culminar' ? 'culminado' : 'cancelado')) abrirReparacion(id);
+        break;
+      }
       case 'nuevo-presupuesto':
         if (repDirty) await guardarReparacion(true);
         presupuestoDesdeReparacion(repEdit);

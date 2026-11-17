@@ -7,10 +7,11 @@
 const Nube = (() => {
   const CFG = typeof NUBE_CONFIG !== 'undefined' ? NUBE_CONFIG : null;
   const activa = !!(CFG && CFG.url && CFG.clave);
-  const TABLAS = ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'revisiones', 'presupuestos', 'reparaciones'];
+  const TABLAS = ['clientes', 'vehiculos', 'servicios', 'citas', 'mensajes', 'aceites', 'revisiones', 'presupuestos', 'reparaciones', 'ingresos'];
   const noDisponibles = new Set(); // tablas que aún no existen en Supabase
   // Lo que el rol "taller" puede escribir (el servidor lo hace cumplir de todas formas)
-  const ESCRITURA_TALLER = { clientes: 'ed', vehiculos: 'ed', servicios: 'ed', revisiones: 'ed', citas: 'todo', mensajes: 'crea' };
+  // Citas y reparaciones: solo lectura para el taller.
+  const ESCRITURA_TALLER = { clientes: 'ed', vehiculos: 'ed', servicios: 'ed', revisiones: 'ed', ingresos: 'ed', mensajes: 'crea' };
   const SESION_KEY = 'jacks4wd-sesion';
 
   let sesion = null;      // { access_token, refresh_token, expires_at, email }
@@ -80,6 +81,8 @@ const Nube = (() => {
       if (f.id === 'revision') cfg.revision = f.data;
       if (f.id === 'tecnicos') cfg.tecnicos = f.data?.lista;
       if (f.id === 'plantillasPres') cfg.plantillasPres = f.data?.lista;
+      if (f.id === 'mensajes') cfg.mensajes = f.data;
+      if (f.id === 'motivosCita') cfg.motivosCita = f.data?.lista;
     });
     return cfg;
   }
@@ -88,6 +91,8 @@ const Nube = (() => {
     if (db.config?.revision) filas.push({ id: 'revision', data: db.config.revision });
     if (db.config?.tecnicos) filas.push({ id: 'tecnicos', data: { lista: db.config.tecnicos } });
     if (db.config?.plantillasPres) filas.push({ id: 'plantillasPres', data: { lista: db.config.plantillasPres } });
+    if (db.config?.mensajes) filas.push({ id: 'mensajes', data: db.config.mensajes });
+    if (db.config?.motivosCita) filas.push({ id: 'motivosCita', data: { lista: db.config.motivosCita } });
     return filas;
   }
   const filasDe = (tabla) => (tabla === 'config' ? configAFilas() : (db[tabla] || []).map((x) => ({ id: x.id, data: x })));
@@ -238,20 +243,87 @@ const Nube = (() => {
   function aplicarRol() {
     document.body.classList.toggle('rol-taller', !esAdmin());
     document.body.classList.toggle('rol-admin', esAdmin());
+    // El taller ve la pestaña como "Reparaciones" (solo lectura, sin presupuestos)
+    const tabPres = $('#tab-btn-presupuestos');
+    if (tabPres) tabPres.textContent = esAdmin() ? 'Presupuestos' : 'Reparaciones';
+    if (!esAdmin() && typeof irSubtabPres === 'function') irSubtabPres('reparaciones');
     // Si el taller estaba en una pestaña restringida, volver al inicio
     const activa = $('.tab.active')?.dataset.tab;
-    if (!esAdmin() && ['presupuestos', 'recordatorios', 'config'].includes(activa)) irA('nuevo');
+    if (!esAdmin() && ['recordatorios', 'config'].includes(activa)) irA('nuevo');
   }
 
   function prepararCabecera() {
     $('#btn-conectar').hidden = true;
     let salir = $('#btn-salir');
     if (!salir) {
+      const clave = document.createElement('button');
+      clave.id = 'btn-clave'; clave.className = 'btn small ghost'; clave.textContent = 'Cambiar contraseña';
+      $('.storage').appendChild(clave);
+      clave.onclick = cambiarContrasena;
       salir = document.createElement('button');
       salir.id = 'btn-salir'; salir.className = 'btn small ghost'; salir.textContent = 'Cerrar sesión';
       $('.storage').appendChild(salir);
       salir.onclick = cerrarSesion;
     }
+  }
+
+  // ---------- Cambiar la contraseña del usuario que inició sesión ----------
+  function cambiarContrasena() {
+    abrirModal(`
+      <h3>Cambiar contraseña</h3>
+      <p class="hint">Cambia la contraseña del usuario con el que entraste (<strong>${esc((sesion?.email || '').split('@')[0])}</strong>). Usa al menos 10 caracteres, mezclando letras y números.</p>
+      <form id="form-clave">
+        <label>Nueva contraseña<input name="c1" type="password" autocomplete="new-password" minlength="10" required></label>
+        <label style="margin-top:8px">Repite la nueva contraseña<input name="c2" type="password" autocomplete="new-password" minlength="10" required></label>
+        <p id="clave-msg" class="hint" style="color:var(--bad)"></p>
+        <div class="actions"><button type="button" class="btn ghost" data-act="cerrar">Cancelar</button><button class="btn primary">Guardar contraseña</button></div>
+      </form>`);
+    $('#form-clave').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target; const msg = $('#clave-msg');
+      if (f.c1.value !== f.c2.value) { msg.textContent = 'Las contraseñas no coinciden.'; return; }
+      if (f.c1.value.length < 10 || !/[a-zA-Z]/.test(f.c1.value) || !/\d/.test(f.c1.value)) { msg.textContent = 'Usa al menos 10 caracteres con letras y números.'; return; }
+      try {
+        await asegurarToken();
+        const r = await fetch(`${CFG.url}/auth/v1/user`, {
+          method: 'PUT', headers: { apikey: CFG.clave, Authorization: 'Bearer ' + sesion.access_token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: f.c1.value }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.msg || d.message || d.error_description || 'No se pudo cambiar');
+        f.c1.value = ''; f.c2.value = '';
+        cerrarModal();
+        toast('Contraseña cambiada. Úsala la próxima vez que inicies sesión.');
+      } catch (err) {
+        msg.textContent = /same/i.test(err.message) ? 'La nueva contraseña debe ser distinta de la actual.' : 'No se pudo cambiar: ' + err.message;
+      }
+    };
+  }
+
+  // ---------- Cierre de sesión por inactividad ----------
+  const ACTIVIDAD_KEY = 'jacks4wd-actividad';
+  const minutosInactividad = () => CFG.minutosInactividad || 30;
+  function marcarActividad() { try { localStorage.setItem(ACTIVIDAD_KEY, String(Date.now())); } catch { /* sin almacenamiento */ } }
+  function inactivoDemasiado() {
+    let ult = 0; try { ult = Number(localStorage.getItem(ACTIVIDAD_KEY)) || 0; } catch { /* sin almacenamiento */ }
+    return ult && Date.now() - ult > minutosInactividad() * 60000;
+  }
+  let vigilando = false;
+  function vigilarInactividad() {
+    marcarActividad();
+    if (vigilando) return;
+    vigilando = true;
+    let ultimaMarca = 0;
+    const alActuar = () => { if (Date.now() - ultimaMarca > 15000) { ultimaMarca = Date.now(); marcarActividad(); } };
+    ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach((ev) => document.addEventListener(ev, alActuar, { passive: true }));
+    setInterval(async () => {
+      if (!sesion || !inactivoDemasiado()) return;
+      await (sincronizando || Promise.resolve()).catch(() => {});
+      if (typeof presDirty !== 'undefined') presDirty = false;
+      if (typeof rvDirty !== 'undefined') rvDirty = false;
+      await cerrarSesion(true);
+      mostrarLogin(`Por seguridad se cerró la sesión tras ${minutosInactividad()} minutos sin uso.`);
+    }, 60000);
   }
 
   function mostrarLogin(mensaje = '') {
@@ -290,8 +362,8 @@ const Nube = (() => {
     setTimeout(() => el.querySelector('[name="usuario"]').focus(), 50);
   }
 
-  async function cerrarSesion() {
-    if ((typeof presDirty !== 'undefined' && presDirty) || (typeof rvDirty !== 'undefined' && rvDirty)) {
+  async function cerrarSesion(automatico = false) {
+    if (automatico !== true && ((typeof presDirty !== 'undefined' && presDirty) || (typeof rvDirty !== 'undefined' && rvDirty))) {
       if (!confirm('Hay cambios sin guardar. ¿Cerrar sesión de todas formas?')) return;
     }
     await (sincronizando || Promise.resolve()).catch(() => {});
@@ -352,6 +424,7 @@ const Nube = (() => {
     setEstado(estadoListo(), 'ok');
     clearInterval(temporizador);
     temporizador = setInterval(traerCambios, (CFG.segundosActualizacion || 30) * 1000);
+    vigilarInactividad();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) traerCambios(); });
     ofrecerMigracion();
     if (esAdmin() && noDisponibles.size) {
@@ -364,6 +437,12 @@ const Nube = (() => {
     document.body.classList.add('modo-nube');
     prepararCabecera();
     const s = leerSesion();
+    // Sesión guardada pero sin uso por mucho tiempo: se pide iniciar sesión de nuevo
+    if (s?.refresh_token && inactivoDemasiado()) {
+      sesion = s; await cerrarSesion(true);
+      mostrarLogin(`Por seguridad se cerró la sesión tras ${minutosInactividad()} minutos sin uso.`);
+      return;
+    }
     if (s?.refresh_token) {
       sesion = s;
       try { await entrar(); return; } catch (e) { guardarSesion(null); mostrarLogin(e.message === 'SIN_SESION' ? '' : 'No se pudo conectar: ' + e.message); return; }

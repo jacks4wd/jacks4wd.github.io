@@ -14,7 +14,11 @@ const GRUPOS_CFG = { basica: 'Revisión básica', completa: 'Adicional en la rev
 
 function irSubtabCfg(cual) {
   $$('.subtab[data-cfgtab]').forEach((b) => b.classList.toggle('active', b.dataset.cfgtab === cual));
-  ['puntos', 'tecnicos', 'plantillas', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
+  ['puntos', 'tecnicos', 'mensajes', 'plantillas', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
+  if (cual === 'mensajes') {
+    if (!msgDirty) msgEdit = { motivos: [...motivosCita()], mensajes: Object.fromEntries(Object.keys(TITULOS_MENSAJES).map((k) => [k, textoMensaje(k)])) };
+    pintarCfgMensajes();
+  }
   if (cual === 'plantillas') { if (!plDirty) plEdit = copiar(plantillasPres()); pintarCfgPlantillas(); }
   if (cual === 'puntos') { if (!cfgDirty) cfgEdit = copiar(configRevision()); pintarCfgPuntos(); }
   if (cual === 'tecnicos') { if (!tecDirty) tecEdit = [...tecnicos()]; pintarCfgTecnicos(); }
@@ -134,6 +138,69 @@ function pintarCfgTecnicos() {
     </div>`;
 }
 
+// ===================== CITAS Y MENSAJES =====================
+let msgEdit = null;   // { mensajes: {...}, motivos: [...] }
+let msgDirty = false;
+const TITULOS_MENSAJES = {
+  citaCliente: 'Recordatorio de cita al cliente',
+  citaEquipo: 'Aviso de cita al grupo del equipo',
+  aceite: 'Recordatorio de cambio de aceite (3 meses)',
+  reparacion: 'Seguimiento de reparación (6 meses)',
+};
+
+function pintarCfgMensajes() {
+  const m = msgEdit;
+  $('#cfg-mensajes').innerHTML = `
+    <div class="card cfg-barra">
+      <div>
+        <h2>Citas y mensajes</h2>
+        <p class="hint" style="margin:0">Motivos de cita y textos de los mensajes de WhatsApp.</p>
+      </div>
+      <div class="cfg-acciones">
+        <button type="button" class="btn primary" data-msg="guardar">${msgDirty ? 'Guardar •' : 'Guardar'}</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Motivos de cita</h3>
+      <p class="hint">Aparecen en la lista "Motivo" al agendar una cita. La opción <strong>"Otro"</strong> siempre está disponible y permite escribir el motivo.</p>
+      ${m.motivos.map((t, i) => `<div class="cfg-tec" data-i="${i}">
+        <input data-msg-motivo value="${esc(t)}" placeholder="Ej: Alineación y balanceo">
+        <button type="button" class="btn tiny ghost" data-msg="subir" title="Subir">↑</button>
+        <button type="button" class="btn tiny ghost" data-msg="bajar" title="Bajar">↓</button>
+        <button type="button" class="btn tiny danger" data-msg="borrar-motivo" title="Quitar">✕</button>
+      </div>`).join('')}
+      <button type="button" class="btn small ghost" data-msg="agregar-motivo">+ Agregar motivo</button>
+    </div>
+    ${Object.entries(TITULOS_MENSAJES).map(([k, titulo]) => `
+      <div class="card cfg-mensaje" data-k="${k}">
+        <div class="form-head"><h3>${titulo}</h3><button type="button" class="btn tiny ghost" data-msg="restaurar">Restaurar texto original</button></div>
+        <textarea data-msg-texto rows="6">${esc(m.mensajes[k])}</textarea>
+        <p class="hint">Variables disponibles (se reemplazan al enviar): ${VARIABLES_MENSAJES[k].map((v) => `<button type="button" class="var-chip" data-msg="var" data-var="${v}">{${v}}</button>`).join(' ')}</p>
+        <div class="mensaje cfg-vista" data-vista></div>
+      </div>`).join('')}`;
+  $$('#cfg-mensajes .cfg-mensaje').forEach(vistaPreviaMensaje);
+}
+
+// Vista previa con datos de ejemplo
+function vistaPreviaMensaje(card) {
+  const k = card.dataset.k;
+  const ejemplo = { nombre: 'Carlos', vehiculo: 'Toyota Hilux', placa: 'AB123CD', fecha: 'martes 18 de noviembre', hora: '9:30 a. m.', motivo: 'cambio de aceite', km: '150.000 km', taller: CONFIG.taller, direccion: EMPRESA.direccion };
+  const txt = msgEdit.mensajes[k].replace(/\{(\w+)\}/g, (_, v) => ejemplo[v] ?? `{${v}}`);
+  card.querySelector('[data-vista]').textContent = 'Vista previa: ' + txt;
+}
+
+async function guardarCfgMensajes() {
+  const motivos = msgEdit.motivos.map((x) => x.trim()).filter((x) => x && x.toLowerCase() !== 'otro');
+  if (!motivos.length) { alert('Debe haber al menos un motivo de cita.'); return; }
+  for (const [k, t] of Object.entries(msgEdit.mensajes)) if (!t.trim()) { alert(`El mensaje "${TITULOS_MENSAJES[k]}" está vacío. Escribe un texto o restaura el original.`); return; }
+  db.config.motivosCita = motivos;
+  db.config.mensajes = { ...msgEdit.mensajes };
+  msgEdit.motivos = [...motivos]; msgDirty = false;
+  await guardar();
+  pintarCfgMensajes();
+  toast('Motivos y mensajes guardados');
+}
+
 // ===================== PLANTILLAS DE PRESUPUESTO =====================
 let plEdit = null;
 let plDirty = false;
@@ -189,6 +256,43 @@ async function guardarCfgPlantillas() {
 
 // ===================== EVENTOS =====================
 function initConfiguracion() {
+  const cm = $('#cfg-mensajes');
+  const marcarMsg = () => { msgDirty = true; const b = $('#cfg-mensajes [data-msg="guardar"]'); if (b) b.textContent = 'Guardar •'; };
+  cm.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.matches('[data-msg-motivo]')) { msgEdit.motivos[Number(t.closest('[data-i]').dataset.i)] = t.value; marcarMsg(); }
+    if (t.matches('[data-msg-texto]')) { const card = t.closest('[data-k]'); msgEdit.mensajes[card.dataset.k] = t.value; vistaPreviaMensaje(card); marcarMsg(); }
+  });
+  cm.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-msg]'); if (!b) return;
+    const i = Number(b.closest('[data-i]')?.dataset.i);
+    const mover = (arr, a, d) => { const j = a + d; if (j < 0 || j >= arr.length) return; [arr[a], arr[j]] = [arr[j], arr[a]]; };
+    switch (b.dataset.msg) {
+      case 'guardar': await guardarCfgMensajes(); return;
+      case 'agregar-motivo': msgEdit.motivos.push(''); break;
+      case 'borrar-motivo': msgEdit.motivos.splice(i, 1); break;
+      case 'subir': mover(msgEdit.motivos, i, -1); break;
+      case 'bajar': mover(msgEdit.motivos, i, 1); break;
+      case 'restaurar': {
+        const k = b.closest('[data-k]').dataset.k;
+        if (!confirm(`¿Restaurar el texto original de "${TITULOS_MENSAJES[k]}"?`)) return;
+        msgEdit.mensajes[k] = MENSAJES_INICIALES[k]; break;
+      }
+      case 'var': {
+        // Insertar la variable donde está el cursor
+        const ta = b.closest('[data-k]').querySelector('textarea');
+        const ins = `{${b.dataset.var}}`; const p = ta.selectionStart ?? ta.value.length;
+        ta.value = ta.value.slice(0, p) + ins + ta.value.slice(ta.selectionEnd ?? p);
+        ta.focus(); ta.selectionStart = ta.selectionEnd = p + ins.length;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
+      default: return;
+    }
+    marcarMsg(); pintarCfgMensajes();
+    if (b.dataset.msg === 'agregar-motivo') $$('#cfg-mensajes [data-msg-motivo]').at(-1)?.focus();
+  });
+
   const pl = $('#cfg-plantillas');
   pl.addEventListener('input', (e) => {
     const t = e.target; const campo = t.dataset.plCampo; if (!campo) return;
@@ -298,7 +402,7 @@ function initConfiguracion() {
     }
   });
 
-  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty || plDirty) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty || plDirty || msgDirty) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 initConfiguracion();

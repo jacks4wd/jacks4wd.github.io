@@ -34,17 +34,21 @@
 </header>
 
 <nav class="tabs" role="tablist">
-  <button class="tab active" data-tab="nuevo">Nuevo registro</button>
-  <button class="tab" data-tab="registros">Registros</button>
+  <button class="tab active" data-tab="servicios">Servicios</button>
   <button class="tab" data-tab="citas">Citas</button>
   <button class="tab" data-tab="revisiones">Revisiones</button>
-  <button class="tab solo-admin" data-tab="presupuestos">Presupuestos</button>
+  <button class="tab" data-tab="presupuestos" id="tab-btn-presupuestos">Presupuestos</button>
   <button class="tab solo-admin" data-tab="recordatorios">Recordatorios <span id="badge-recordatorios" class="badge" hidden>0</span></button>
 </nav>
 
 <main>
-  <!-- ============ NUEVO REGISTRO ============ -->
-  <section id="tab-nuevo" class="panel active">
+  <!-- ============ SERVICIOS (cambios de aceite) ============ -->
+  <section id="tab-servicios" class="panel active">
+    <div class="subtabs">
+      <button class="subtab active" data-svtab="nuevo">Nuevo cambio de aceite</button>
+      <button class="subtab" data-svtab="historial">Historial de servicios</button>
+    </div>
+  <div id="sv-nuevo">
     <div class="card">
       <h2>Buscar cliente existente</h2>
       <input id="buscar-nuevo" type="search" placeholder="Nombre, teléfono o placa…" autocomplete="off">
@@ -97,13 +101,12 @@
         <button type="submit" class="btn primary">Guardar registro</button>
       </div>
     </form>
-  </section>
+  </div>
 
-  <!-- ============ REGISTROS ============ -->
-  <section id="tab-registros" class="panel">
+  <div id="sv-historial" hidden>
     <div class="card">
       <div class="form-head">
-        <h2>Registros</h2>
+        <h2>Historial de servicios</h2>
         <select id="filtro-estado">
           <option value="">Todos</option>
           <option value="vencido">Vencidos</option>
@@ -123,6 +126,7 @@
       </div>
       <p id="vacio-registros" class="vacio" hidden>No hay registros todavía.</p>
     </div>
+  </div>
   </section>
 
   <!-- ============ RECORDATORIOS ============ -->
@@ -140,6 +144,11 @@
       <h2>Pendientes de enviar</h2>
       <p class="hint">Vehículos cuyo último cambio de aceite fue hace 3 meses o más. El botón abre WhatsApp con el mensaje listo; solo tienes que presionar enviar.</p>
       <div id="lista-pendientes"></div>
+    </div>
+    <div class="card">
+      <h2>Seguimiento de reparaciones (6 meses)</h2>
+      <p class="hint">Vehículos cuya última reparación culminada fue hace 6 meses o más. Se les invita a una revisión de seguimiento sin costo.</p>
+      <div id="lista-reparaciones-rec"></div>
     </div>
     <div class="card">
       <h2>Próximos 30 días</h2>
@@ -179,11 +188,13 @@
     <div class="subtabs">
       <button class="subtab active" data-cfgtab="puntos">Puntos de revisión</button>
       <button class="subtab" data-cfgtab="tecnicos">Técnicos</button>
+      <button class="subtab" data-cfgtab="mensajes">Citas y mensajes</button>
       <button class="subtab" data-cfgtab="plantillas">Plantillas de presupuesto</button>
       <button class="subtab" data-cfgtab="aceites">Catálogo de aceites</button>
     </div>
     <div id="cfg-puntos"></div>
     <div id="cfg-tecnicos" hidden></div>
+    <div id="cfg-mensajes" hidden></div>
     <div id="cfg-plantillas" hidden></div>
     <div id="cfg-aceites" class="card" hidden>
       <div class="form-head">
@@ -248,7 +259,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Técnico</th><th>Ítems</th><th>Nota de entrega</th><th>Estado</th></tr></thead>
+            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Técnico</th><th>Ítems</th><th>Nota de entrega</th><th>Estado</th><th></th></tr></thead>
             <tbody id="tabla-rep"></tbody>
           </table>
         </div>
@@ -262,8 +273,10 @@
     <div class="subtabs">
       <button class="subtab active" data-rvtab="nueva">Nueva revisión</button>
       <button class="subtab" data-rvtab="historial">Historial de revisiones <span id="rv-contador" class="contador"></span></button>
+      <button class="subtab" data-rvtab="ingreso">Diagnóstico / Reparación / Modificación</button>
     </div>
     <div id="rv-nueva"></div>
+    <div id="rv-ingreso" hidden></div>
     <div id="rv-historial" hidden>
       <div class="card">
         <div class="filtros">
@@ -276,7 +289,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Tipo</th><th>Técnico</th><th>Resultado</th><th></th></tr></thead>
+            <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Tipo</th><th>Técnico</th><th>Resultado</th><th>Estado</th><th></th></tr></thead>
             <tbody id="rv-tabla"></tbody>
           </table>
         </div>
@@ -304,6 +317,7 @@
 <script src="presupuestos.js"></script>
 <script src="revisiones.js"></script>
 <script src="reparaciones.js"></script>
+<script src="ingresos.js"></script>
 <script src="configuracion.js"></script>
 <script src="nube.js"></script>
 </body>

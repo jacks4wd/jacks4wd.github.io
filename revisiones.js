@@ -242,6 +242,7 @@ function revisionVacia(vid = null) {
     id: uid(), numero: 0, fecha: hoyISO(), tipo: 'basica', vehiculoId: vid, tecnico: '', km: null,
     items: {}, opciones: { traseras: {}, fluidos: [] }, observaciones: '',
     estructura: copiar(configRevision()), // puntos vigentes al crearla
+    estado: 'abierta',
   };
 }
 
@@ -253,7 +254,9 @@ function irSubtabRev(cual) {
   $$('.subtab[data-rvtab]').forEach((b) => b.classList.toggle('active', b.dataset.rvtab === cual));
   $('#rv-nueva').hidden = cual !== 'nueva';
   $('#rv-historial').hidden = cual !== 'historial';
+  $('#rv-ingreso').hidden = cual !== 'ingreso';
   if (cual === 'historial') renderHistorialRev();
+  if (cual === 'ingreso' && typeof mostrarIngresos === 'function') mostrarIngresos();
 }
 
 function nuevaRevision(vid = null) {
@@ -312,10 +315,28 @@ function clienteHTML() {
     </div>`;
 }
 
+// Estados de una revisión: abierta (se puede modificar), cerrada o cancelada (bloqueada).
+// Solo un administrador puede reabrir una revisión cerrada o cancelada.
+const ESTADOS_RVS = { abierta: 'Abierta', cerrada: 'Cerrada', cancelada: 'Cancelada' };
+const rvBloqueada = (r) => r && (r.estado === 'cerrada' || r.estado === 'cancelada');
+const esAdminUI = () => !document.body.classList.contains('rol-taller');
+
+function barraEstadoRev(r) {
+  if (rvNuevo) return '';
+  if (rvBloqueada(r)) {
+    return `<div class="card rv-bloqueo">🔒 Esta revisión está <strong>${ESTADOS_RVS[r.estado].toLowerCase()}</strong>${r.fechaCierre ? ` desde el ${fmtFecha(r.fechaCierre)}` : ''}: no se puede modificar.
+      ${esAdminUI() ? '<button type="button" class="btn small ghost" data-rv="reabrir-rev">Reabrir revisión</button>' : ''}</div>`;
+  }
+  return '';
+}
+
 function pintarEditorRev() {
   const r = rvEdit;
   const tecnicoOtro = r.tecnico && !tecnicos().includes(r.tecnico);
+  const bloq = rvBloqueada(r);
+  $('#rv-nueva').classList.toggle('rv-bloqueada', !!bloq);
   $('#rv-nueva').innerHTML = `
+    ${barraEstadoRev(r)}
     <div class="card rv-cabecera">
       <div class="form-head">
         <h2>${rvNuevo ? 'Nueva revisión' : `Revisión ${numRev(r.numero)}`}</h2>
@@ -364,10 +385,35 @@ function pintarEditorRev() {
 
     <div class="rv-barra">
       <span id="rv-progreso"></span>
-      ${rvNuevo ? '' : '<button type="button" class="btn danger" data-rv="borrar">Eliminar</button>'}
-      <button type="button" class="btn primary" data-rv="guardar">Guardar revisión</button>
+      ${bloq ? '<button type="button" class="btn ghost" data-rv="volver-hist">← Historial</button>' : `
+        ${rvNuevo ? '' : '<button type="button" class="btn danger solo-admin" data-rv="borrar">Eliminar</button>'}
+        ${rvNuevo ? '' : '<button type="button" class="btn ghost" data-rv="cancelar-rev">Cancelar revisión</button>'}
+        ${rvNuevo ? '' : '<button type="button" class="btn ghost" data-rv="cerrar-rev">Cerrar revisión</button>'}
+        <button type="button" class="btn primary" data-rv="guardar">Guardar revisión</button>`}
     </div>`;
   pintarChecklist();
+  // Revisión cerrada: todos los campos quedan deshabilitados
+  if (bloq) $$('#rv-nueva input, #rv-nueva select, #rv-nueva textarea').forEach((el) => (el.disabled = true));
+}
+
+// Cerrar / cancelar / reabrir una revisión
+async function cambiarEstadoRev(estado) {
+  const r = rvEdit;
+  if (estado !== 'abierta') {
+    if (rvDirty && !(await guardarRevision())) return;
+    const txt = estado === 'cerrada'
+      ? `¿Cerrar la revisión ${numRev(r.numero)}? Después no se podrá modificar${esAdminUI() ? ' (un administrador puede reabrirla)' : ''}.`
+      : `¿Cancelar la revisión ${numRev(r.numero)}? Después no se podrá modificar${esAdminUI() ? ' (un administrador puede reabrirla)' : ''}.`;
+    if (!confirm(txt)) return;
+  } else if (!confirm(`¿Reabrir la revisión ${numRev(r.numero)} para modificarla?`)) return;
+  const g = db.revisiones.find((x) => x.id === r.id); if (!g) return;
+  g.estado = estado;
+  g.fechaCierre = estado === 'abierta' ? null : hoyISO();
+  g.actualizado = new Date().toISOString();
+  rvEdit = JSON.parse(JSON.stringify(g)); rvDirty = false;
+  await guardar();
+  pintarEditorRev();
+  toast(`Revisión ${numRev(r.numero)} ${ESTADOS_RVS[estado].toLowerCase()}`);
 }
 
 function botonesHTML(def, it) {
@@ -672,7 +718,9 @@ function renderHistorialRev() {
       <td>${r.tipo === 'completa' ? 'Completa' : 'Básica'}</td>
       <td>${esc(r.tecnico)}</td>
       <td class="rv-resultado">${resultadoHTML(r)}</td>
+      <td><span class="estado-rvs ${r.estado || 'abierta'}">${ESTADOS_RVS[r.estado] || 'Abierta'}</span></td>
       <td class="acciones-fila">
+        <button class="btn tiny ghost" data-rvh="editar" title="${rvBloqueada(r) ? 'Ver' : 'Modificar'}">${rvBloqueada(r) ? '👁' : '✏️'}</button>
         <button class="btn tiny ghost" data-rvh="pdf">PDF</button>
         <button class="btn tiny wa" data-rvh="wa">WhatsApp</button>
         <button class="btn tiny ghost" data-rvh="presupuesto">Presupuesto</button>
@@ -717,6 +765,8 @@ function initRevisiones() {
   cont.addEventListener('click', async (e) => {
     const r = rvEdit; if (!r) return;
     const t = e.target;
+    // Revisión cerrada/cancelada: solo se permiten acciones de la barra (PDF, WhatsApp, reabrir…)
+    if (rvBloqueada(r) && !t.closest('[data-rv]')) return;
     // Nivel / estado de un fluido (revisión completa)
     const btnSel = t.closest('[data-sel]');
     if (btnSel) {
@@ -770,6 +820,10 @@ function initRevisiones() {
         $('#rv-otro-vehiculo [data-veh="marca"]')?.focus();
         break;
       }
+      case 'cerrar-rev': await cambiarEstadoRev('cerrada'); break;
+      case 'cancelar-rev': await cambiarEstadoRev('cancelada'); break;
+      case 'reabrir-rev': await cambiarEstadoRev('abierta'); break;
+      case 'volver-hist': rvDirty = false; nuevaRevision(); irSubtabRev('historial'); break;
       case 'guardar':
         // Al guardar: limpiar el formulario y mostrar el historial
         if (await guardarRevision()) { nuevaRevision(); irSubtabRev('historial'); }
