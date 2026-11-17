@@ -1812,7 +1812,7 @@ init();
 
 // Dirección pública de la app (para enlaces que se comparten con los clientes)
 function urlPublica() {
-  const u = (typeof NUBE_CONFIG !== 'undefined' && NUBE_CONFIG.urlPublica) || 'https://marquesdanny97-lang.github.io/jacks4wd-app/';
+  const u = (typeof NUBE_CONFIG !== 'undefined' && NUBE_CONFIG.urlPublica) || 'https://jacks4wd.github.io/jacks4wd-app/';
   return u.endsWith('/') ? u : u + '/';
 }
 const urlGarantias = () => urlPublica() + 'garantias.html';
