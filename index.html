@@ -44,26 +44,26 @@
 <main>
   <!-- ============ SERVICIOS (cambios de aceite) ============ -->
   <section id="tab-servicios" class="panel active">
-    <div class="subtabs">
-      <button class="subtab active" data-svtab="nuevo">Nuevo cambio de aceite</button>
-      <button class="subtab" data-svtab="historial">Historial de servicios</button>
-    </div>
-  <div id="sv-nuevo">
+  <div id="sv-nuevo" hidden>
     <div class="card">
-      <h2>Buscar cliente existente</h2>
+      <div class="form-head">
+        <h2 id="titulo-form">Nuevo cambio de aceite</h2>
+        <button type="button" id="btn-volver-sv" class="btn small ghost">← Volver al listado</button>
+      </div>
+      <h4 class="subtitulo" style="margin-top:0">Cliente</h4>
+      <div id="sv-buscar-box">
       <input id="buscar-nuevo" type="search" placeholder="Nombre, teléfono o placa…" autocomplete="off">
       <div id="resultados-nuevo" class="resultados"></div>
+      <button type="button" id="btn-crear-cliente-sv" class="btn small ghost btn-crear-cliente">+ Crear nuevo cliente</button>
+      </div>
       <div id="seleccion-actual" class="seleccion" hidden></div>
     </div>
 
-    <form id="form-nuevo" class="card" autocomplete="off">
-      <div class="form-head">
-        <h2 id="titulo-form">Nuevo cliente</h2>
-        <button type="button" id="btn-limpiar" class="btn small ghost">Limpiar / cliente nuevo</button>
-      </div>
+    <form id="form-nuevo" class="card" autocomplete="off" novalidate>
+      <div id="sv-datos-cliente" hidden>
 
-      <fieldset>
-        <legend>Cliente</legend>
+      <fieldset id="sv-fs-cliente">
+        <legend>Cliente nuevo <button type="button" id="btn-limpiar" class="btn tiny ghost">Cancelar</button></legend>
         <div class="grid">
           <label>Nombre *<input name="nombre" required></label>
           <label>Teléfono *<input name="telefono" required placeholder="0414-1234567" inputmode="tel"></label>
@@ -71,7 +71,7 @@
       </fieldset>
 
       <fieldset>
-        <legend>Vehículo <button type="button" id="btn-otro-vehiculo" class="btn tiny ghost" hidden>+ Otro vehículo de este cliente</button></legend>
+        <legend>Vehículo</legend>
         <div class="grid">
           <label>Marca *<input name="marca" required list="lista-marcas"></label>
           <label>Modelo *<input name="modelo" required></label>
@@ -80,6 +80,8 @@
           <label>Color <span class="opt">(opcional)</span><input name="color"></label>
         </div>
       </fieldset>
+
+      </div>
 
       <fieldset>
         <legend>Cambio de aceite</legend>
@@ -98,15 +100,20 @@
       </fieldset>
 
       <div class="actions">
-        <button type="submit" class="btn primary">Guardar registro</button>
+        <button type="button" class="btn ghost" id="btn-cancelar-sv">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar cambio de aceite</button>
       </div>
     </form>
   </div>
 
-  <div id="sv-historial" hidden>
+  <div id="sv-historial">
     <div class="card">
       <div class="form-head">
-        <h2>Historial de servicios</h2>
+        <h2>Cambios de aceite</h2>
+        <button type="button" id="btn-nuevo-sv" class="btn primary">+ Nuevo cambio de aceite</button>
+      </div>
+      <div class="filtros">
+        <input id="buscar-registros" type="search" placeholder="Buscar por nombre, teléfono, placa, marca o modelo…">
         <select id="filtro-estado">
           <option value="">Todos</option>
           <option value="vencido">Vencidos</option>
@@ -114,7 +121,6 @@
           <option value="aldia">Al día</option>
         </select>
       </div>
-      <input id="buscar-registros" type="search" placeholder="Buscar por nombre, teléfono, placa, marca o modelo…">
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -272,14 +278,17 @@
 
   <section id="tab-revisiones" class="panel">
     <div class="subtabs">
-      <button class="subtab active" data-rvtab="nueva">Nueva revisión</button>
-      <button class="subtab" data-rvtab="historial">Historial de revisiones <span id="rv-contador" class="contador"></span></button>
+      <button class="subtab active" data-rvtab="historial">Revisiones <span id="rv-contador" class="contador"></span></button>
       <button class="subtab" data-rvtab="ingreso">Diagnósticos</button>
     </div>
-    <div id="rv-nueva"></div>
+    <div id="rv-nueva" hidden></div>
     <div id="rv-ingreso" hidden></div>
-    <div id="rv-historial" hidden>
+    <div id="rv-historial">
       <div class="card">
+        <div class="form-head">
+          <h2>Revisiones</h2>
+          <button type="button" id="btn-nueva-rev" class="btn primary">+ Nueva revisión</button>
+        </div>
         <div class="filtros">
           <input id="rv-buscar" type="search" placeholder="Buscar por cliente, vehículo, placa, técnico o número…">
           <select id="rv-filtro-tipo">

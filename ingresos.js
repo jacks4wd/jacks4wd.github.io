@@ -82,7 +82,7 @@ function nuevoIngreso() {
   ingEdit = ingresoVacio(); ingNuevo = true; ingDirty = false;
   pintarFormIng();
 }
-function volverListaIng() {
+async function volverListaIng() {
   if (ingDirty && !await confirmarSinGuardar()) return;
   ingEdit = null; ingDirty = false;
   mostrarIngresos();
@@ -108,16 +108,7 @@ function clienteIngHTML(x) {
   const n = x._nuevo || {};
   return `<input id="ing-buscar-cliente" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…" autocomplete="off">
     <div id="ing-res-cliente" class="picker-list"></div>
-    <p class="hint rv-o">o registra un cliente nuevo (quedará guardado en el registro de clientes):</p>
-    <div class="grid" id="ing-nuevo-cliente">
-      <label>Nombre *<input data-nuevo="nombre" value="${esc(n.nombre || '')}"></label>
-      <label>Teléfono *<input data-nuevo="telefono" value="${esc(n.telefono || '')}" placeholder="0414-1234567" inputmode="tel"></label>
-      <label>Marca *<input data-nuevo="marca" value="${esc(n.marca || '')}" list="lista-marcas"></label>
-      <label>Modelo *<input data-nuevo="modelo" value="${esc(n.modelo || '')}"></label>
-      <label>Placa *<input data-nuevo="placa" class="upper" value="${esc(n.placa || '')}"></label>
-      <label>Año <span class="opt">(opcional)</span><input data-nuevo="anio" value="${esc(n.anio || '')}" inputmode="numeric" maxlength="4"></label>
-      <label>Color <span class="opt">(opcional)</span><input data-nuevo="color" value="${esc(n.color || '')}"></label>
-    </div>`;
+    ${camposClienteNuevoHTML(n, "ing-nuevo-cliente")}`;
 }
 
 function pintarFormIng() {
@@ -137,6 +128,7 @@ function pintarFormIng() {
       <div class="grid">
         <label>Motivo de ingreso *<input id="ing-motivo" value="${esc(x.motivo)}" placeholder="Ej: instalar suspensión, ruido en tren delantero…"></label>
         <label>Técnico <span class="opt">(opcional)</span><select id="ing-tecnico">${opcionesTecnico(x.tecnico)}</select></label>
+        <label id="ing-tecnico-otro-wrap" ${x.tecnico && !tecnicos().includes(x.tecnico) ? '' : 'hidden'}>Nombre del técnico<input id="ing-tecnico-otro" value="${x.tecnico && !tecnicos().includes(x.tecnico) ? esc(x.tecnico) : ''}"></label>
         <label>Fecha<input id="ing-fecha" type="date" value="${x.fecha}"></label>
       </div>
       <label class="full">Diagnóstico <span class="opt">(una línea por cada hallazgo o trabajo recomendado; cada línea será un ítem al pasarlo a presupuesto o reparación)</span>
@@ -160,7 +152,7 @@ function leerFormIng() {
   x.motivo = $('#ing-motivo').value.trim();
   x.descripcion = $('#ing-desc').value.trim();
   x.fecha = $('#ing-fecha').value || hoyISO();
-  const t = $('#ing-tecnico').value; if (t !== '__otro') x.tecnico = t;
+  const t = $('#ing-tecnico').value; x.tecnico = t === '__otro' ? $('#ing-tecnico-otro').value.trim() : t;
   if (!x.vehiculoId && x._otroDe && $('#ing-otro-veh')) x._vehNuevo = leerCamposVehiculo($('#ing-otro-veh'));
   else if (!x.vehiculoId) { x._nuevo = {}; $$('#ing-nuevo-cliente [data-nuevo]').forEach((i) => (x._nuevo[i.dataset.nuevo] = i.value.trim())); }
 }
@@ -169,14 +161,14 @@ async function guardarIngreso({ volver = true } = {}) {
   leerFormIng();
   const x = ingEdit;
   if (!x.vehiculoId && x._otroDe) {
-    const vid = crearVehiculoCliente(x._otroDe, x._vehNuevo || {}); if (!vid) return false;
+    const vid = await crearVehiculoCliente(x._otroDe, x._vehNuevo || {}); if (!vid) return false;
     x.vehiculoId = vid;
   }
   if (!x.vehiculoId) {
     const d = x._nuevo || {};
     if (['nombre', 'telefono', 'marca', 'modelo', 'placa'].some((k) => !d[k])) { alert('Selecciona un cliente registrado o completa los datos del cliente nuevo (nombre, teléfono, marca, modelo y placa).'); return false; }
     if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return false; }
-    const vid = obtenerVehiculoNuevo(d); if (!vid) return false;
+    const vid = await obtenerVehiculoNuevo(d); if (!vid) return false;
     x.vehiculoId = vid;
   }
   if (!x.motivo) { alert('Escribe el motivo de ingreso.'); $('#ing-motivo')?.focus(); return false; }
@@ -264,13 +256,10 @@ function initIngresos() {
     }
     if (ingEdit) ingDirty = true;
   });
-  c.addEventListener('change', (e) => {
+  c.addEventListener('change', async (e) => {
     if (!ingEdit) return;
     ingDirty = true;
-    if (e.target.id === 'ing-tecnico' && e.target.value === '__otro') {
-      const n = (await pedirTexto('Nombre del técnico:', '') || '').trim();
-      leerFormIng(); if (n) ingEdit.tecnico = n; pintarFormIng();
-    }
+    if (e.target.id === 'ing-tecnico') { const w = $('#ing-tecnico-otro-wrap'); w.hidden = e.target.value !== '__otro'; if (!w.hidden) $('#ing-tecnico-otro').focus(); }
   });
   c.addEventListener('click', async (e) => {
     const t = e.target;

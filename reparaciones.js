@@ -12,6 +12,52 @@ const esCerrada = (r) => r && (r.estado === 'culminado' || r.estado === 'cancela
 const numRep = (n) => '#' + String(n || 0).padStart(4, '0');
 const siguienteNumeroRep = () => Math.max(0, ...(db.reparaciones || []).map((r) => r.numero || 0)) + 1;
 
+// ---------- Correcciones (versiones) ----------
+// Una reparación culminada o cancelada nunca se modifica. Si se cerró con un error, el
+// administrador crea una CORRECCIÓN: una nueva versión con el mismo número que reemplaza a
+// la anterior. La versión anterior queda guardada tal cual (bloqueada) como historial.
+const reemplazoDe = (r) => (db.reparaciones || []).find((x) => x.reemplazaA === r.id) || null;
+const numRepV = (r) => numRep(r.numero) + ((r.version || 1) > 1 ? ` v${r.version}` : '');
+const vigente = (r) => !reemplazoDe(r);
+
+async function corregirReparacion(r) {
+  if (soloLectura() || !esCerrada(r)) return;
+  if (reemplazoDe(r)) { toast('Esta reparación ya tiene una corrección'); return; }
+  if (repDirty && !await confirmarSinGuardar()) return;
+  const motivo = await pedirDato({
+    titulo: `Corregir ${tipoRep(r).toLowerCase()} ${numRep(r.numero)}`,
+    texto: 'Se creará una nueva versión con el mismo número para corregir el error. La versión actual se conserva sin cambios como historial y deja de mostrarse en el listado.',
+    etiqueta: 'Motivo de la corrección', placeholder: 'Ej: se cerró sin el ítem de alineación', boton: 'Crear corrección',
+  });
+  if (!motivo) return;
+  const ahora = new Date().toISOString();
+  const nueva = {
+    ...JSON.parse(JSON.stringify(r)),
+    id: uid(), version: (r.version || 1) + 1, reemplazaA: r.id, motivoCorreccion: motivo.slice(0, 500),
+    estado: 'en_proceso', fechaCierre: null, cerradoPor: '',
+    corregidoPor: (typeof Nube !== 'undefined' && Nube.perfil?.nombre) || '', fechaCorreccion: hoyISO(),
+    creado: ahora, actualizado: ahora,
+  };
+  db.reparaciones.push(nueva);
+  repDirty = false;
+  await guardar();
+  toast(`Corrección creada: ${numRepV(nueva)}. Ajusta lo necesario y vuelve a cerrarla.`);
+  abrirReparacion(nueva.id);
+}
+
+// Historial de versiones (se muestra en el editor cuando hay más de una)
+function historialVersionesHTML(r) {
+  const cadena = [];
+  let x = r; while (x?.reemplazaA) { x = db.reparaciones.find((y) => y.id === x.reemplazaA); if (x) cadena.unshift(x); }
+  cadena.push(r);
+  let s = reemplazoDe(r); while (s) { cadena.push(s); s = reemplazoDe(s); }
+  if (cadena.length < 2) return '';
+  return `<div class="rep-versiones"><strong>Historial de versiones</strong><ul>${cadena.map((v) => `<li>${v.id === r.id ? '<strong>' : `<a href="#" data-rep="ver-version" data-vid="${v.id}">`}Versión ${v.version || 1}${v.id === r.id ? ' (esta)</strong>' : '</a>'}
+    · ${ESTADOS_REP[v.estado]}${v.fechaCierre ? ' el ' + fmtFecha(v.fechaCierre) : ''}${v.notaEntrega ? ' · Nota de entrega ' + esc(v.notaEntrega) : ''}
+    ${v.motivoCorreccion ? `<br><small>Corrección${v.fechaCorreccion ? ' del ' + fmtFecha(v.fechaCorreccion) : ''}${v.corregidoPor ? ' por ' + esc(v.corregidoPor) : ''}: ${esc(v.motivoCorreccion)}</small>` : ''}
+    ${reemplazoDe(v) ? '' : ' <span class="estado-rep en_proceso" style="font-size:.75em">vigente</span>'}</li>`).join('')}</ul></div>`;
+}
+
 // Crea la reparación de un presupuesto aprobado, o la actualiza si ya existe
 // (conservando técnico editado a mano, notas, nota de entrega y estado).
 function crearOActualizarReparacion(p) {
@@ -45,11 +91,12 @@ function irSubtabPres(cual) {
 // ===================== LISTADO =====================
 function renderReparaciones() {
   if (!db.reparaciones) db.reparaciones = [];
-  $('#rep-contador').textContent = db.reparaciones.filter((r) => r.estado === 'en_proceso').length || '';
+  $('#rep-contador').textContent = db.reparaciones.filter((r) => r.estado === 'en_proceso' && vigente(r)).length || '';
   if (!$('#tabla-rep')) return;
   const q = norm($('#buscar-rep').value).trim();
   const filtro = $('#filtro-rep').value;
   const lista = db.reparaciones
+    .filter(vigente)
     .filter((r) => !filtro || r.estado === filtro)
     .filter((r) => !q || norm([numRep(r.numero), r.cliente, r.telefono, r.vehiculo, r.tecnico, r.notaEntrega, ...r.items.map((i) => i.desc)].join(' ')).includes(q))
     .sort((a, b) => (b.numero || 0) - (a.numero || 0));
@@ -57,7 +104,7 @@ function renderReparaciones() {
     const ap = r.items.filter((i) => i.estado === 'aprobado').length;
     const re = r.items.length - ap;
     return `<tr data-repid="${r.id}">
-      <td><strong>${numRep(r.numero)}</strong>${r.tipo === 'modificacion' ? '<br><small class="tipo-mod">Modificación</small>' : ''}</td>
+      <td><strong>${numRepV(r)}</strong>${r.reemplazaA ? '<br><small class="tipo-mod">Corrección</small>' : ''}${r.tipo === 'modificacion' ? '<br><small class="tipo-mod">Modificación</small>' : ''}</td>
       <td>${fmtFecha(r.fecha)}</td>
       <td>${esc(r.cliente || '—')}</td>
       <td>${esc(r.vehiculo || '—')}</td>
@@ -102,11 +149,11 @@ const presupuestosDerivados = (r) => (db.presupuestos || []).filter((p) => p.ori
 const TIPOS_REP = { reparacion: 'Reparación', modificacion: 'Modificación' };
 const tipoRep = (r) => TIPOS_REP[r?.tipo] || 'Reparación';
 // Las reparaciones manuales o creadas desde un diagnóstico (sin presupuesto) tienen ítems editables
-const itemsManuales = (r) => !r.presupuestoId;
+const itemsManuales = (r) => !r.presupuestoId || !!r.reemplazaA; // las correcciones también
 let repNueva = false;
 
 // Nueva reparación manual (solo admin). pre: datos iniciales (p. ej. desde un diagnóstico)
-function nuevaReparacion(pre = {}) {
+async function nuevaReparacion(pre = {}) {
   if (repDirty && !await confirmarSinGuardar()) return;
   repEdit = {
     id: uid(), numero: 0, fecha: hoyISO(), tipo: 'reparacion', tecnico: '', notas: '', notaEntrega: '', estado: 'en_proceso',
@@ -144,16 +191,7 @@ function clienteRepHTML(r) {
   const n = r._nuevo || {};
   return `<input id="rep-buscar-cliente" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…" autocomplete="off">
     <div id="rep-res-cliente" class="picker-list"></div>
-    <p class="hint rv-o">o registra un cliente nuevo:</p>
-    <div class="grid" id="rep-nuevo-cliente">
-      <label>Nombre *<input data-nuevo="nombre" value="${esc(n.nombre || '')}"></label>
-      <label>Teléfono *<input data-nuevo="telefono" value="${esc(n.telefono || '')}" placeholder="0414-1234567" inputmode="tel"></label>
-      <label>Marca *<input data-nuevo="marca" value="${esc(n.marca || '')}" list="lista-marcas"></label>
-      <label>Modelo *<input data-nuevo="modelo" value="${esc(n.modelo || '')}"></label>
-      <label>Placa *<input data-nuevo="placa" class="upper" value="${esc(n.placa || '')}"></label>
-      <label>Año <span class="opt">(opcional)</span><input data-nuevo="anio" value="${esc(n.anio || '')}" inputmode="numeric" maxlength="4"></label>
-      <label>Color <span class="opt">(opcional)</span><input data-nuevo="color" value="${esc(n.color || '')}"></label>
-    </div>`;
+    ${camposClienteNuevoHTML(n, "rep-nuevo-cliente")}`;
 }
 
 function itemsRepHTML(r, editable) {
@@ -194,6 +232,7 @@ function pintarEditorRep() {
       ${!repNueva && r.presupuestoId ? '<button class="btn ghost" data-rep="presupuesto">Ver presupuesto</button>' : ''}
       ${!repNueva && rechazados ? '<button class="btn ghost" data-rep="nuevo-presupuesto">Crear otro presupuesto</button>' : ''}
       ${repNueva || cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
+      ${!repNueva && cerrada && !soloLectura() && vigente(r) ? '<button class="btn ghost" data-rep="corregir" title="Crear una nueva versión con el mismo número">✎ Corregir (nueva versión)</button>' : ''}
       ${repNueva ? '' : '<button class="btn ghost" data-rep="pdf">⬇ PDF</button>'}
       <button class="btn primary" data-rep="guardar">Guardar</button>
     </div>
@@ -203,10 +242,12 @@ function pintarEditorRep() {
         <div class="rv-tipos">${Object.entries(TIPOS_REP).map(([k, n]) => `<button type="button" class="rv-tipo ${r.tipo === k ? 'activo' : ''}" data-rep="tipo" data-tipo="${k}">${n}</button>`).join('')}</div>
         <fieldset style="margin-top:12px"><legend>Cliente y vehículo</legend><div id="rep-cliente">${clienteRepHTML(r)}</div></fieldset>
       </div>` : `
+    ${!repNueva && reemplazoDe(r) ? `<div class="card rep-reemplazada">⚠ Esta versión fue <strong>reemplazada</strong> por una corrección (versión ${reemplazoDe(r).version || 2}). Se conserva solo como historial. <a href="#" data-rep="ver-version" data-vid="${reemplazoDe(r).id}">Ver versión vigente</a></div>` : ''}
+    ${!repNueva && r.reemplazaA ? `<div class="card rep-correccion">✎ <strong>Versión ${r.version || 2}</strong>: corrige la versión anterior${r.motivoCorreccion ? ` — ${esc(r.motivoCorreccion)}` : ''}.</div>` : ''}
     <div class="card rep-estado-card">
       ${cerrada ? `
         <div class="rep-cerrada">🔒 ${tipoRep(r)} <strong>${r.estado === 'cancelado' ? 'cancelada' : 'culminada'}</strong>${r.fechaCierre ? ` el ${fmtFecha(r.fechaCierre)}` : ''}${r.cerradoPor ? ` por ${esc(r.cerradoPor)}` : ''}.
-          Los ítems, el técnico y el estado ya no se pueden modificar. Solo puedes agregar notas y el número de nota de entrega.</div>`
+          Los ítems, el técnico y el estado ya no se pueden modificar. Solo puedes agregar notas y el número de nota de entrega.${!soloLectura() && vigente(r) ? ' Si se cerró con un error, usa <strong>Corregir (nueva versión)</strong>.' : ''}</div>`
       : `
         <div class="rep-estado-acciones">
           <span>Estado:</span>
@@ -215,6 +256,7 @@ function pintarEditorRep() {
         </div>
         <p class="hint" style="margin:6px 0 0"><strong>Culminado:</strong> vehículo listo, probado y entregado (requiere el N° de nota de entrega). <strong>Cancelado:</strong> el cliente lo retiró sin reparar (todos los ítems pasan a "rechazado"). Ambos son definitivos.</p>
         ${editarItems ? `<div class="rv-tipos" style="margin-top:10px">${Object.entries(TIPOS_REP).map(([k, n]) => `<button type="button" class="rv-tipo ${r.tipo === k ? 'activo' : ''}" data-rep="tipo" data-tipo="${k}">${n}</button>`).join('')}</div>` : ''}`}
+      ${repNueva ? '' : historialVersionesHTML(r)}
       ${derivados.length ? `<p class="hint" style="margin:8px 0 0">Presupuestos creados a partir de esta reparación: ${derivados.map((p) => `<a href="#" data-rep="abrir-pres" data-pid="${p.id}">${numPres(p.numero)}</a> (${ESTADOS_PRES[p.estado] || p.estado})`).join(', ')}</p>` : ''}
     </div>`}
     <form id="form-rep" class="doc doc-editor" autocomplete="off">
@@ -225,7 +267,7 @@ function pintarEditorRep() {
           <div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div>
         </div>
       </div>
-      <div class="doc-numero">${tipoRep(r).toUpperCase()} ${repNueva ? '(nueva)' : numRep(r.numero)}${r.presupuestoNumero ? ` <small class="rep-sub">· Presupuesto ${numPres(r.presupuestoNumero)}</small>` : ''}</div>
+      <div class="doc-numero">${tipoRep(r).toUpperCase()} ${repNueva ? '(nueva)' : numRepV(r)}${r.presupuestoNumero ? ` <small class="rep-sub">· Presupuesto ${numPres(r.presupuestoNumero)}</small>` : ''}</div>
       <div class="doc-box">
         <div class="doc-fila2"><div>CLIENTE: ${esc(r.cliente)}</div><div class="r">FECHA: ${fmtFecha(r.fecha)}</div></div>
         <div class="doc-fila2"><div>TELÉFONO: ${esc(r.telefono)}</div><div class="r">VEHÍCULO: ${esc(r.vehiculo)}</div></div>
@@ -288,14 +330,14 @@ async function guardarReparacionNueva() {
   leerEditorRep();
   const r = repEdit;
   if (!r.vehiculoId && r._otroDe) {
-    const vid = crearVehiculoCliente(r._otroDe, r._vehNuevo || {}); if (!vid) return false;
+    const vid = await crearVehiculoCliente(r._otroDe, r._vehNuevo || {}); if (!vid) return false;
     asignarVehiculoRep(vid);
   }
   if (!r.vehiculoId) {
     const d = r._nuevo || {};
     if (['nombre', 'telefono', 'marca', 'modelo', 'placa'].some((k) => !d[k])) { alert('Selecciona un cliente registrado o completa los datos del cliente nuevo (nombre, teléfono, marca, modelo y placa).'); return false; }
     if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return false; }
-    const vid = obtenerVehiculoNuevo(d); if (!vid) return false;
+    const vid = await obtenerVehiculoNuevo(d); if (!vid) return false;
     asignarVehiculoRep(vid);
   }
   r.items = r.items.filter((it) => it.desc);
@@ -398,7 +440,7 @@ async function guardarReparacion(silencioso = false) {
   return true;
 }
 
-function volverAListaRep() {
+async function volverAListaRep() {
   if (repDirty && !await confirmarSinGuardar()) return;
   repEdit = null; repDirty = false; repNueva = false;
   mostrarEditorRep(false);
@@ -415,7 +457,7 @@ function docRepHTML(r) {
         <div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div>
       </div>
     </div>
-    <div class="doc-numero">${tipoRep(r).toUpperCase()} ${numRep(r.numero)}</div>
+    <div class="doc-numero">${tipoRep(r).toUpperCase()} ${numRepV(r)}${r.reemplazaA ? ' <small class="rep-sub">· Corrección</small>' : ''}${reemplazoDe(r) ? ' <small class="rep-sub">· Versión reemplazada</small>' : ''}</div>
     <div class="doc-box">
       <div class="doc-fila2"><div>CLIENTE: ${esc(r.cliente)}</div><div class="r">FECHA: ${fmtFecha(r.fecha)}</div></div>
       <div class="doc-fila2"><div>TELÉFONO: ${esc(r.telefono)}</div><div class="r">VEHÍCULO: ${esc(r.vehiculo)}</div></div>
@@ -436,7 +478,7 @@ function docRepHTML(r) {
 // ===================== EVENTOS =====================
 function initReparaciones() {
   if (!db.reparaciones) db.reparaciones = [];
-  $$('.subtab[data-prtab]').forEach((b) => (b.onclick = () => {
+  $$('.subtab[data-prtab]').forEach((b) => (b.onclick = async () => {
     if (b.dataset.prtab === 'reparaciones' && typeof presDirty !== 'undefined' && presDirty && !await confirmarSinGuardar()) return;
     if (b.dataset.prtab === 'presupuestos' && repDirty && !await confirmarSinGuardar()) return;
     if (b.dataset.prtab === 'reparaciones') presDirty = false; else repDirty = false;
@@ -496,6 +538,13 @@ function initReparaciones() {
         const cid = vehiculo(repEdit.vehiculoId)?.clienteId;
         Object.assign(repEdit, { vehiculoId: null, vehiculo: '', _otroDe: cid, _vehNuevo: {} }); repDirty = true; pintarEditorRep();
         $('#rep-otro-veh [data-veh="marca"]')?.focus();
+        break;
+      }
+      case 'corregir': await corregirReparacion(repEdit); break;
+      case 'ver-version': {
+        e.preventDefault();
+        if (repDirty && !await confirmarSinGuardar()) break;
+        repDirty = false; abrirReparacion(b.dataset.vid);
         break;
       }
       case 'culminar':

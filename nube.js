@@ -249,7 +249,7 @@ const Nube = (() => {
     if (!esAdmin() && typeof irSubtabPres === 'function') irSubtabPres('reparaciones');
     // Si el taller estaba en una pestaña restringida, volver al inicio
     const activa = $('.tab.active')?.dataset.tab;
-    if (!esAdmin() && ['recordatorios', 'config'].includes(activa)) irA('nuevo');
+    if (!esAdmin() && ['recordatorios', 'config'].includes(activa)) irA('registros');
   }
 
   function prepararCabecera() {
@@ -257,7 +257,7 @@ const Nube = (() => {
     let salir = $('#btn-salir');
     if (!salir) {
       const clave = document.createElement('button');
-      clave.id = 'btn-clave'; clave.className = 'btn small ghost'; clave.textContent = 'Cambiar contraseña';
+      clave.id = 'btn-clave'; clave.className = 'btn small ghost solo-admin'; clave.textContent = 'Cambiar contraseña';
       $('.storage').appendChild(clave);
       clave.onclick = cambiarContrasena;
       salir = document.createElement('button');
@@ -269,11 +269,13 @@ const Nube = (() => {
 
   // ---------- Cambiar la contraseña del usuario que inició sesión ----------
   function cambiarContrasena() {
+    if (!esAdmin()) { avisar('Solo el administrador puede cambiar contraseñas.'); return; }
     abrirModal(`
       <h3>Cambiar contraseña</h3>
       <p class="hint">Cambia la contraseña del usuario con el que entraste (<strong>${esc((sesion?.email || '').split('@')[0])}</strong>). Usa al menos 10 caracteres, mezclando letras y números.</p>
       <form id="form-clave">
-        <label>Nueva contraseña<input name="c1" type="password" autocomplete="new-password" minlength="10" required></label>
+        <label>Contraseña actual<input name="c0" type="password" autocomplete="current-password" required></label>
+        <label style="margin-top:8px">Nueva contraseña<input name="c1" type="password" autocomplete="new-password" minlength="10" required></label>
         <label style="margin-top:8px">Repite la nueva contraseña<input name="c2" type="password" autocomplete="new-password" minlength="10" required></label>
         <p id="clave-msg" class="hint" style="color:var(--bad)"></p>
         <div class="actions"><button type="button" class="btn ghost" data-act="cerrar">Cancelar</button><button class="btn primary">Guardar contraseña</button></div>
@@ -281,17 +283,20 @@ const Nube = (() => {
     $('#form-clave').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target; const msg = $('#clave-msg');
+      if (!f.c0.value) { msg.textContent = 'Escribe tu contraseña actual.'; return; }
       if (f.c1.value !== f.c2.value) { msg.textContent = 'Las contraseñas no coinciden.'; return; }
       if (f.c1.value.length < 10 || !/[a-zA-Z]/.test(f.c1.value) || !/\d/.test(f.c1.value)) { msg.textContent = 'Usa al menos 10 caracteres con letras y números.'; return; }
       try {
-        await asegurarToken();
+        // Verificar la contraseña actual antes de cambiarla
+        try { guardarSesion(await pedirToken('password', { email: sesion.email, password: f.c0.value })); }
+        catch { msg.textContent = 'La contraseña actual no es correcta.'; f.c0.value = ''; f.c0.focus(); return; }
         const r = await fetch(`${CFG.url}/auth/v1/user`, {
           method: 'PUT', headers: { apikey: CFG.clave, Authorization: 'Bearer ' + sesion.access_token, 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: f.c1.value }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.msg || d.message || d.error_description || 'No se pudo cambiar');
-        f.c1.value = ''; f.c2.value = '';
+        f.c0.value = ''; f.c1.value = ''; f.c2.value = '';
         cerrarModal();
         toast('Contraseña cambiada. Úsala la próxima vez que inicies sesión.');
       } catch (err) {

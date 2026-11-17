@@ -251,6 +251,11 @@ function normalizarDatos(data) {
     r.fechaCierre = fecha(r.fechaCierre); r.cerradoPor = String(r.cerradoPor || '');
     r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));
     r.ingresoId = id(r.ingresoId);
+    // Correcciones (versiones con el mismo número)
+    r.version = Math.max(1, Math.floor(num(r.version) || 1));
+    r.reemplazaA = id(r.reemplazaA);
+    if (!r.reemplazaA) { r.version = 1; delete r.motivoCorreccion; delete r.corregidoPor; delete r.fechaCorreccion; }
+    else { r.motivoCorreccion = String(r.motivoCorreccion || '').slice(0, 500); r.corregidoPor = String(r.corregidoPor || '').slice(0, 100); r.fechaCorreccion = fecha(r.fechaCorreccion); }
   });
   d.presupuestos.forEach((p) => { p.ingresoId = id(p.ingresoId); });
   d.ingresos.forEach((x) => {
@@ -550,10 +555,30 @@ function irA(tab) {
   $$('.panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + tab));
   window.scrollTo(0, 0);
 }
+// Servicios: listado de cambios de aceite ("historial") o formulario ("nuevo")
+let svDirty = false;
 function irSubtabSv(cual) {
-  $$('.subtab[data-svtab]').forEach((b) => b.classList.toggle('active', b.dataset.svtab === cual));
   $('#sv-nuevo').hidden = cual !== 'nuevo';
   $('#sv-historial').hidden = cual !== 'historial';
+  if (cual === 'historial') renderRegistros();
+}
+async function nuevoCambioAceite(vid = null) {
+  if (svDirty && !(await confirmarSinGuardar())) return;
+  limpiarFormulario();
+  irA('servicios'); irSubtabSv('nuevo');
+  if (vid) seleccionarVehiculo(vid); else $('#buscar-nuevo').focus();
+}
+async function volverListaSv() {
+  if (svDirty && !(await confirmarSinGuardar())) return;
+  limpiarFormulario();
+  irSubtabSv('historial');
+}
+// Muestra la parte de cliente según el modo: buscar, seleccionado, nuevo u otro vehículo
+function modoClienteSv(modo) {
+  $('#sv-buscar-box').hidden = modo !== 'buscar';
+  $('#seleccion-actual').hidden = !(modo === 'seleccionado' || modo === 'otro');
+  $('#sv-datos-cliente').hidden = !(modo === 'nuevo' || modo === 'otro');
+  $('#sv-fs-cliente').hidden = modo === 'otro';
 }
 
 // ===================== BÚSQUEDA =====================
@@ -578,13 +603,45 @@ function camposVehiculoHTML(d = {}) {
     <label>Color <span class="opt">(opcional)</span><input data-veh="color" value="${esc(d.color || '')}"></label>
   </div>`;
 }
+// Campos de "cliente nuevo" ocultos tras el botón "+ Crear nuevo cliente".
+// Si ya tienen datos escritos (p. ej. al repintar) se muestran abiertos.
+function camposClienteNuevoHTML(n = {}, idGrid = '') {
+  const abierto = Object.values(n || {}).some((x) => String(x || '').trim());
+  const campo = (k, etq, extra = '') => `<label>${etq}<input data-nuevo="${k}" value="${esc(n[k] || '')}" ${extra}></label>`;
+  return `<div class="crear-cliente-box">
+    <button type="button" class="btn small ghost btn-crear-cliente" data-crear-cliente ${abierto ? 'hidden' : ''}>+ Crear nuevo cliente</button>
+    <div class="nuevo-cliente-campos" ${abierto ? '' : 'hidden'}>
+      <div class="form-head" style="margin:10px 0 4px"><strong>Cliente nuevo</strong><button type="button" class="btn tiny ghost" data-cancelar-cliente>Cancelar</button></div>
+      <div class="grid" id="${esc(idGrid)}">
+        ${campo('nombre', 'Nombre *')}
+        ${campo('telefono', 'Teléfono *', 'placeholder="0414-1234567" inputmode="tel"')}
+        ${campo('marca', 'Marca *', 'list="lista-marcas"')}
+        ${campo('modelo', 'Modelo *')}
+        ${campo('placa', 'Placa *', 'class="upper"')}
+        ${campo('anio', 'Año <span class="opt">(opcional)</span>', 'inputmode="numeric" maxlength="4"')}
+        ${campo('color', 'Color <span class="opt">(opcional)</span>')}
+      </div>
+    </div>
+  </div>`;
+}
+document.addEventListener('click', (e) => {
+  const abrir = e.target.closest('[data-crear-cliente]');
+  const cerrar = e.target.closest('[data-cancelar-cliente]');
+  if (!abrir && !cerrar) return;
+  const box = (abrir || cerrar).closest('.crear-cliente-box'); if (!box) return;
+  const campos = box.querySelector('.nuevo-cliente-campos');
+  if (cerrar) campos.querySelectorAll('input').forEach((i) => (i.value = ''));
+  campos.hidden = !!cerrar;
+  box.querySelector('[data-crear-cliente]').hidden = !cerrar;
+  if (abrir) campos.querySelector('input')?.focus();
+});
 function leerCamposVehiculo(cont) {
   const d = {};
   cont.querySelectorAll('[data-veh]').forEach((i) => (d[i.dataset.veh] = i.value.trim()));
   return d;
 }
 // Crea el vehículo para el cliente (o reutiliza el de la misma placa). Devuelve su id o null.
-function crearVehiculoCliente(clienteId, d) {
+async function crearVehiculoCliente(clienteId, d) {
   if (!d.marca || !d.modelo || !d.placa) { alert('Completa marca, modelo y placa del vehículo.'); return null; }
   const placa = d.placa.toUpperCase().replace(/\s+/g, '');
   const existente = db.vehiculos.find((v) => v.placa === placa);
@@ -624,8 +681,8 @@ function camposAceiteHTML() {
     <label>Marca *<select name="aceiteMarcaSel">${MARCAS_ACEITE.map((m) => `<option>${m}</option>`).join('')}<option value="__otra">Otra marca…</option></select></label>
     <label class="campo-otra" hidden>Escribe la marca *<input name="aceiteMarcaOtra" list="lista-marcas-aceite"></label>
     <label>Producto / línea <span class="opt">(opcional)</span><select name="aceiteId"></select></label>
-    <label>Viscosidad *<input name="viscosidad" required list="lista-viscosidades" placeholder="Ej: 10W-40" class="upper"></label>
-    <label>Tipo *<select name="aceiteTipo" required><option value="">Selecciona…</option>${TIPOS_ACEITE.map((t) => `<option>${t}</option>`).join('')}</select></label>
+    <label class="campo-manual">Viscosidad *<input name="viscosidad" required list="lista-viscosidades" placeholder="Ej: 10W-40" class="upper"></label>
+    <label class="campo-manual">Tipo *<select name="aceiteTipo" required><option value="">Selecciona…</option>${TIPOS_ACEITE.map((t) => `<option>${t}</option>`).join('')}</select></label>
   </div>
   <div class="aceite-foto" hidden></div>`;
 }
@@ -638,6 +695,9 @@ function prepararAceite(cont) {
   const pintarFoto = () => {
     const a = aceitePorId(q('aceiteId').value); const box = cont.querySelector('.aceite-foto');
     box.hidden = !a;
+    // Producto del catálogo: viscosidad y tipo vienen fijos; solo se escriben con "Otro"
+    cont.querySelectorAll('.campo-manual').forEach((l) => (l.hidden = !!a));
+    if (a) { q('viscosidad').value = a.viscosidad; q('aceiteTipo').value = a.tipo; }
     if (a) box.innerHTML = (srcFoto(a) ? `<img class="aceite-thumb grande" src="${esc(srcFoto(a))}" alt="">` : '<span class="sin-foto">Sin foto</span>') +
       `<div><strong>${esc(a.marca)} ${esc(a.linea)} ${esc(a.viscosidad)}</strong><br><small>${esc(a.tipo)}</small></div>`;
   };
@@ -645,7 +705,7 @@ function prepararAceite(cont) {
     const marca = norm(marcaActual());
     const prods = db.aceites.filter((a) => marca && norm(a.marca) === marca)
       .sort((a, b) => (a.linea + a.viscosidad).localeCompare(b.linea + b.viscosidad));
-    q('aceiteId').innerHTML = `<option value="">${prods.length ? '— Otro / sin especificar —' : '— Sin productos de esta marca —'}</option>` +
+    q('aceiteId').innerHTML = `<option value="">${prods.length ? 'Otro… (escribir viscosidad y tipo)' : '— Sin productos de esta marca —'}</option>` +
       prods.map((a) => `<option value="${a.id}" ${a.id === selId ? 'selected' : ''}>${esc(a.linea)} ${esc(a.viscosidad)}</option>`).join('');
     pintarFoto();
   };
@@ -670,11 +730,12 @@ function prepararAceite(cont) {
       pintarProductos(s?.aceiteId || '');
       q('viscosidad').value = s?.aceiteViscosidad || '';
       q('aceiteTipo').value = s?.aceiteTipo || '';
+      pintarFoto();
     },
     refrescar() { pintarProductos(); },
     leer() {
       const a = aceitePorId(q('aceiteId').value);
-      const r = { aceiteId: a ? a.id : '', aceiteMarca: marcaActual(), aceiteLinea: a ? a.linea : '', aceiteViscosidad: q('viscosidad').value.trim().toUpperCase(), aceiteTipo: q('aceiteTipo').value };
+      const r = { aceiteId: a ? a.id : '', aceiteMarca: marcaActual(), aceiteLinea: a ? a.linea : '', aceiteViscosidad: a ? a.viscosidad : q('viscosidad').value.trim().toUpperCase(), aceiteTipo: a ? a.tipo : q('aceiteTipo').value };
       r.aceite = resumenAceite(r);
       return r;
     },
@@ -798,9 +859,8 @@ function limpiarFormulario() {
   form().reset();
   form().fecha.value = hoyISO();
   aceiteNuevo.set(null);
-  $('#seleccion-actual').hidden = true;
-  $('#btn-otro-vehiculo').hidden = true;
-  $('#titulo-form').textContent = 'Nuevo cliente';
+  modoClienteSv('buscar');
+  svDirty = false;
   $('#buscar-nuevo').value = '';
   $('#resultados-nuevo').innerHTML = '';
 }
@@ -816,15 +876,24 @@ function seleccionarVehiculo(vid) {
   f.km.value = ''; f.proximoKm.value = ''; f.revisiones.value = '';
   const u = ultimoServicio(v.id);
   aceiteNuevo.set(u); f.filtro.value = u?.filtro || ''; f.sku.value = u?.sku || '';
-  $('#titulo-form').textContent = 'Nuevo cambio de aceite';
-  $('#btn-otro-vehiculo').hidden = false;
-  const box = $('#seleccion-actual');
-  box.hidden = false;
-  box.innerHTML = `<strong>${esc(c.nombre)}</strong> · ${esc(etiquetaVehiculo(v))} · <strong>${esc(v.placa)}</strong><br>` +
-    (u ? `Último cambio: ${fmtFecha(u.fecha)} a ${fmtKm(u.km)} · Próximo: ${fmtKm(u.proximoKm)} · ${esc(resumenAceite(u))}` : 'Sin cambios anteriores');
+  modoClienteSv('seleccionado');
+  $('#seleccion-actual').innerHTML = `<div><strong>${esc(c.nombre)}</strong> · ${esc(c.telefono)}<br>${esc(etiquetaVehiculo(v))} · <strong>${esc(v.placa)}</strong><br><small>` +
+    (u ? `Último cambio: ${fmtFecha(u.fecha)} a ${fmtKm(u.km)} · Próximo: ${fmtKm(u.proximoKm)} · ${esc(resumenAceite(u))}` : 'Sin cambios anteriores') + `</small></div>
+    <div class="rv-sel-botones"><button type="button" class="btn small ghost" data-sv="otro-vehiculo">+ Otro vehículo de este cliente</button>
+    <button type="button" class="btn small ghost" data-sv="cambiar">Cambiar</button></div>`;
+  $('#seleccion-actual').classList.add('rv-sel-cliente');
   $('#resultados-nuevo').innerHTML = '';
   $('#buscar-nuevo').value = '';
   f.km.focus();
+}
+
+// Quita el cliente/vehículo elegido sin borrar los datos del cambio de aceite
+function limpiarClienteSv() {
+  sel = { clienteId: null, vehiculoId: null };
+  const f = form();
+  ['nombre', 'telefono', 'marca', 'modelo', 'placa', 'anio', 'color'].forEach((n) => (f[n].value = ''));
+  $('#buscar-nuevo').value = ''; $('#resultados-nuevo').innerHTML = '';
+  modoClienteSv('buscar');
 }
 
 function otroVehiculo() {
@@ -832,8 +901,9 @@ function otroVehiculo() {
   sel.vehiculoId = null;
   ['marca', 'modelo', 'placa', 'anio', 'color', 'km', 'proximoKm', 'filtro', 'sku', 'revisiones'].forEach((n) => (f[n].value = ''));
   aceiteNuevo.set(null);
-  $('#titulo-form').textContent = 'Nuevo vehículo para ' + f.nombre.value;
-  $('#seleccion-actual').innerHTML = `<strong>${esc(f.nombre.value)}</strong> · nuevo vehículo`;
+  modoClienteSv('otro');
+  $('#seleccion-actual').innerHTML = `<div><strong>${esc(f.nombre.value)}</strong> · ${esc(f.telefono.value)}<br><span class="hint">Nuevo vehículo para este cliente:</span></div><button type="button" class="btn small ghost" data-sv="cambiar">Cancelar</button>`;
+  svDirty = true;
   f.marca.focus();
 }
 
@@ -842,7 +912,7 @@ function renderResultadosNuevo() {
   const lista = buscarVehiculos(q).slice(0, 8);
   const cont = $('#resultados-nuevo');
   if (!q.trim()) { cont.innerHTML = ''; return; }
-  if (!lista.length) { cont.innerHTML = '<p class="hint">No se encontró. Completa el formulario para registrarlo como nuevo.</p>'; return; }
+  if (!lista.length) { cont.innerHTML = '<p class="hint">No se encontró. Pulsa «+ Crear nuevo cliente» para registrarlo.</p>'; return; }
   cont.innerHTML = lista.map((v) => {
     const c = cliente(v.clienteId); const u = ultimoServicio(v.id);
     return `<div class="resultado" data-vid="${v.id}">
@@ -859,6 +929,12 @@ async function guardarNuevo(e) {
   for (const k of Object.keys(d)) d[k] = d[k].trim();
   d.placa = d.placa.toUpperCase().replace(/\s+/g, '');
   d.sku = d.sku.toUpperCase();
+  // Validación manual (el formulario tiene partes ocultas)
+  if (!sel.vehiculoId && $('#sv-datos-cliente').hidden) { alert('Busca un cliente registrado o pulsa «+ Crear nuevo cliente».'); return; }
+  const faltan = [['nombre', 'nombre'], ['telefono', 'teléfono'], ['marca', 'marca'], ['modelo', 'modelo'], ['placa', 'placa'], ['fecha', 'fecha'], ['km', 'KM actual'], ['proximoKm', 'próximo KM']].filter(([k]) => !d[k]).map(([, t]) => t);
+  if (faltan.length) { alert('Falta completar: ' + faltan.join(', ') + '.'); return; }
+  const ac = aceiteNuevo.leer();
+  if (!ac.aceiteMarca || !ac.aceiteViscosidad || !ac.aceiteTipo) { alert('Completa el aceite: elige un producto del catálogo o escribe marca, viscosidad y tipo.'); return; }
 
   if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos (ej. 0414-1234567).'); return; }
   d.km = parseKm(d.km); d.proximoKm = parseKm(d.proximoKm);
@@ -901,6 +977,7 @@ async function guardarNuevo(e) {
   await guardar();
   toast(`Registro guardado: ${c.nombre} · ${v.placa}`);
   limpiarFormulario();
+  irSubtabSv('historial');
 }
 
 function renderListas() {
@@ -1127,7 +1204,7 @@ function renderRecordatorios() {
 // Se registra en "mensajes" (no en la reparación, que puede estar cerrada y bloqueada).
 function candidatosReparacion() {
   const ultimas = {};
-  (db.reparaciones || []).filter((r) => r.estado === 'culminado' && r.fechaCierre).forEach((r) => {
+  (db.reparaciones || []).filter((r) => r.estado === 'culminado' && r.fechaCierre && !(db.reparaciones || []).some((x) => x.reemplazaA === r.id)).forEach((r) => {
     const k = r.vehiculoId || r.id;
     if (!ultimas[k] || r.fechaCierre > ultimas[k].fechaCierre) ultimas[k] = r;
   });
@@ -1416,8 +1493,10 @@ function formCita(ct = null, preVid = null) {
         <div id="cita-veh" class="seleccion" style="margin:0 0 8px">${resumenVeh()}</div>
         <input id="cita-buscar" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…">
         <div id="cita-res" class="picker-list"></div>
-        <div id="cita-libre" class="grid" style="margin-top:8px" ${vidSel ? 'hidden' : ''}>
-          <label>Nombre (cliente no registrado)<input name="nombreLibre" value="${esc(ct.nombreLibre)}"></label>
+        <button type="button" class="btn small ghost btn-crear-cliente" id="cita-btn-libre">+ Crear nuevo cliente</button>
+        <div id="cita-libre" class="grid" style="margin-top:8px" hidden>
+          <p class="hint full" style="margin:0">Cliente nuevo (solo para esta cita) <button type="button" class="btn tiny ghost" id="cita-libre-cancelar">Cancelar</button></p>
+          <label>Nombre *<input name="nombreLibre" value="${esc(ct.nombreLibre)}"></label>
           <label>Teléfono<input name="telefonoLibre" value="${esc(ct.telefonoLibre)}"></label>
           <label>Vehículo<input name="vehiculoLibre" value="${esc(ct.vehiculoLibre)}"></label>
         </div>
@@ -1429,12 +1508,19 @@ function formCita(ct = null, preVid = null) {
         <button class="btn primary">Guardar cita</button>
       </div>
     </form>`);
+  let libreAbierto = !!(ct.nombreLibre || ct.telefonoLibre || ct.vehiculoLibre);
   const pintarVeh = () => {
     $('#cita-veh').innerHTML = resumenVeh();
-    $('#cita-libre').hidden = !!vidSel || !!otroDe;
+    const hay = !!vidSel || !!otroDe;
+    $('#cita-veh').hidden = !hay;
+    $('#cita-buscar').hidden = hay || libreAbierto; $('#cita-res').hidden = hay || libreAbierto;
+    $('#cita-libre').hidden = hay || !libreAbierto;
+    $('#cita-btn-libre').hidden = hay || libreAbierto;
     const q = $('#quitar-veh'); if (q) q.onclick = () => { vidSel = null; otroDe = null; pintarVeh(); };
     const o = $('#otro-veh'); if (o) o.onclick = () => { otroDe = vehiculo(vidSel).clienteId; vidSel = null; pintarVeh(); $('#cita-otro-veh [data-veh="marca"]').focus(); };
   };
+  $('#cita-btn-libre').onclick = () => { libreAbierto = true; pintarVeh(); $('#form-cita').nombreLibre.focus(); };
+  $('#cita-libre-cancelar').onclick = () => { libreAbierto = false; ['nombreLibre', 'telefonoLibre', 'vehiculoLibre'].forEach((n) => ($('#form-cita')[n].value = '')); pintarVeh(); };
   pintarVeh();
   $('#cita-motivo').onchange = (e) => {
     const otro = e.target.value === 'Otro';
@@ -1453,7 +1539,7 @@ function formCita(ct = null, preVid = null) {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target).entries());
     if (otroDe) {
-      const vid = crearVehiculoCliente(otroDe, leerCamposVehiculo($('#cita-otro-veh')));
+      const vid = await crearVehiculoCliente(otroDe, leerCamposVehiculo($('#cita-otro-veh')));
       if (!vid) return;
       vidSel = vid; otroDe = null;
     }
@@ -1505,11 +1591,11 @@ function init() {
   $('#btn-nuevo-aceite').onclick = () => formAceite();
   
   $('#catalogo-aceites').onclick = (e) => { const p = e.target.closest('[data-aid]'); if (p) formAceite(aceitePorId(p.dataset.aid)); };
-  $$('.subtab[data-svtab]').forEach((b) => (b.onclick = () => irSubtabSv(b.dataset.svtab)));
   // Al entrar a una pestaña se muestra la vista limpia (lista / formulario nuevo),
   // salvo que haya cambios sin guardar en lo que se estaba editando.
   $$('.tab').forEach((b) => (b.onclick = () => {
     irA(b.dataset.tab);
+    if (b.dataset.tab === 'servicios' && !svDirty) { limpiarFormulario(); irSubtabSv('historial'); }
     if (b.dataset.tab === 'revisiones' && typeof reiniciarVistaRevisiones === 'function') reiniciarVistaRevisiones();
     if (b.dataset.tab === 'presupuestos' && typeof reiniciarVistaPresupuestos === 'function') reiniciarVistaPresupuestos();
   }));
@@ -1523,8 +1609,19 @@ function init() {
   // Nuevo registro
   $('#buscar-nuevo').oninput = renderResultadosNuevo;
   $('#resultados-nuevo').onclick = (e) => { const r = e.target.closest('[data-vid]'); if (r) seleccionarVehiculo(r.dataset.vid); };
-  $('#btn-limpiar').onclick = limpiarFormulario;
-  $('#btn-otro-vehiculo').onclick = otroVehiculo;
+  $('#btn-limpiar').onclick = limpiarClienteSv;
+  $('#btn-crear-cliente-sv').onclick = () => { modoClienteSv('nuevo'); svDirty = true; form().nombre.focus(); };
+  $('#seleccion-actual').onclick = (e) => {
+    const b = e.target.closest('[data-sv]'); if (!b) return;
+    if (b.dataset.sv === 'otro-vehiculo') otroVehiculo();
+    if (b.dataset.sv === 'cambiar') limpiarClienteSv();
+  };
+  $('#btn-nuevo-sv').onclick = () => nuevoCambioAceite();
+  $('#btn-volver-sv').onclick = volverListaSv;
+  $('#btn-cancelar-sv').onclick = volverListaSv;
+  form().addEventListener('input', () => (svDirty = true));
+  form().addEventListener('change', () => (svDirty = true));
+  window.addEventListener('beforeunload', (e) => { if (svDirty) { e.preventDefault(); e.returnValue = ''; } });
   form().onsubmit = guardarNuevo;
   // Campos de KM: se formatean con puntos de miles mientras se escribe.
   document.addEventListener('input', (e) => {
@@ -1550,7 +1647,7 @@ function init() {
     switch (act) {
       case 'cerrar': cerrarModal(); break;
       case 'ver': e.preventDefault(); verDetalle(vid); break;
-      case 'nuevo-cambio': cerrarModal(); irA('nuevo'); seleccionarVehiculo(vid); break;
+      case 'nuevo-cambio': cerrarModal(); nuevoCambioAceite(vid); break;
       case 'agendar': agendarDesdeVehiculo(vid); break;
       case 'editar-cv': editarClienteVehiculo(vid); break;
       case 'mensaje': formMensaje(vid); break;

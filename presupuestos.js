@@ -120,8 +120,8 @@ function mostrarEditor(si) {
 }
 
 // extra (opcional): { items: [...], revisionId } — por ejemplo al crear desde una revisión
-function nuevoPresupuesto(vid = null, extra = null) {
-  if (!confirmarSalida()) return;
+async function nuevoPresupuesto(vid = null, extra = null) {
+  if (!(await confirmarSalida())) return;
   presEdit = {
     id: uid(), numero: siguienteNumero(), fecha: hoyISO(), estado: 'pendiente',
     vehiculoId: null, cliente: '', telefono: '', vehiculo: '', direccion: '',
@@ -534,13 +534,13 @@ async function guardarPresupuesto(silencioso = false) {
   return true;
 }
 
-function confirmarSalida() {
+async function confirmarSalida() {
   if (!presDirty) return true;
   return await confirmarSinGuardar();
 }
 
-function volverALista() {
-  if (!confirmarSalida()) return;
+async function volverALista() {
+  if (!(await confirmarSalida())) return;
   presEdit = null; presDirty = false;
   mostrarEditor(false);
   renderPresupuestos();
@@ -741,7 +741,7 @@ function initPresupuestos() {
     }
     if (b.dataset.pact === 'otro-veh-cancelar') { presOtroDe = null; $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML(); return; }
     if (b.dataset.pact === 'otro-veh-guardar') {
-      const vid = crearVehiculoCliente(presOtroDe, leerCamposVehiculo($('#pres-otro-veh')));
+      const vid = await crearVehiculoCliente(presOtroDe, leerCamposVehiculo($('#pres-otro-veh')));
       if (!vid) return;
       leerEditor(); asignarVehiculo(vid); presDirty = true; presOtroDe = null;
       const f = $('#form-pres');
@@ -762,7 +762,7 @@ function initPresupuestos() {
       case 'informar-equipo': await informarEquipoAprobacion(presEdit); break;
       case 'aprob-cancelar': aprobEdit = null; pintarPanelEstado(); break;
       case 'aprob-confirmar': await confirmarAprobacion(); break;
-      case 'ver-reparacion': if (confirmarSalida()) { presDirty = false; irSubtabPres('reparaciones'); abrirReparacion(presEdit.reparacionId); } break;
+      case 'ver-reparacion': if (await confirmarSalida()) { presDirty = false; irSubtabPres('reparaciones'); abrirReparacion(presEdit.reparacionId); } break;
       case 'fila': agregarFila(); break;
       case 'obs-condiciones': {
         const t = $('#form-pres [name="observaciones"]');
@@ -792,7 +792,7 @@ function initPresupuestos() {
       case 'pdf': if (await guardarPresupuesto(true)) exportarPDF(presEdit); break;
       case 'wa': if (await guardarPresupuesto(true)) enviarWhatsApp(presEdit); break;
       case 'duplicar': {
-        if (!confirmarSalida()) break;
+        if (!(await confirmarSalida())) break;
         const base = JSON.parse(JSON.stringify(presEdit));
         presEdit = { ...base, id: uid(), numero: siguienteNumero(), fecha: hoyISO(), estado: 'pendiente', creado: undefined };
         presNuevo = true; presDirty = true;

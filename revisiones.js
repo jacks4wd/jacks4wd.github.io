@@ -215,7 +215,7 @@ function datosVehiculoRev(rev) {
 }
 
 // Crea (o reutiliza) cliente y vehículo a partir de los datos escritos en la revisión
-function obtenerVehiculoNuevo(d) {
+async function obtenerVehiculoNuevo(d) {
   const placa = d.placa.toUpperCase().replace(/\s+/g, '');
   const existente = db.vehiculos.find((v) => v.placa === placa);
   if (existente) {
@@ -246,12 +246,14 @@ function revisionVacia(vid = null) {
   };
 }
 
-function confirmarSalidaRev() {
+async function confirmarSalidaRev() {
   return !rvDirty || await confirmarSinGuardar();
 }
 
 function irSubtabRev(cual) {
-  $$('.subtab[data-rvtab]').forEach((b) => b.classList.toggle('active', b.dataset.rvtab === cual));
+  // El editor ("nueva") pertenece a la subpestaña "Revisiones" (listado)
+  const sub = cual === 'nueva' ? 'historial' : cual;
+  $$('.subtab[data-rvtab]').forEach((b) => b.classList.toggle('active', b.dataset.rvtab === sub));
   $('#rv-nueva').hidden = cual !== 'nueva';
   $('#rv-historial').hidden = cual !== 'historial';
   $('#rv-ingreso').hidden = cual !== 'ingreso';
@@ -259,17 +261,26 @@ function irSubtabRev(cual) {
   if (cual === 'ingreso' && typeof mostrarIngresos === 'function') mostrarIngresos();
 }
 
-function nuevaRevision(vid = null) {
-  if (!confirmarSalidaRev()) return;
+async function nuevaRevision(vid = null) {
+  if (!(await confirmarSalidaRev())) return;
   rvEdit = revisionVacia(vid); rvNuevo = true; rvDirty = false;
   irSubtabRev('nueva');
   pintarEditorRev();
   window.scrollTo(0, 0);
 }
 
-function abrirRevision(id) {
+// Vuelve al listado de revisiones (pregunta si hay cambios sin guardar)
+async function volverListaRev() {
+  if (!(await confirmarSalidaRev())) return false;
+  rvDirty = false;
+  await nuevaRevision();
+  irSubtabRev('historial');
+  return true;
+}
+
+async function abrirRevision(id) {
   const r = db.revisiones.find((x) => x.id === id); if (!r) return;
-  if (!confirmarSalidaRev()) return;
+  if (!(await confirmarSalidaRev())) return;
   rvEdit = JSON.parse(JSON.stringify(r));
   rvEdit.opciones = { traseras: {}, fluidos: [], ...(rvEdit.opciones || {}) };
   rvEdit.items = rvEdit.items || {};
@@ -303,16 +314,7 @@ function clienteHTML() {
   return `
     <input id="rv-buscar-cliente" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…" autocomplete="off">
     <div id="rv-res-cliente" class="picker-list"></div>
-    <p class="hint rv-o">o registra un cliente nuevo (quedará guardado en Registros):</p>
-    <div class="grid" id="rv-nuevo-cliente">
-      <label>Nombre *<input data-nuevo="nombre" value="${esc(n.nombre || '')}"></label>
-      <label>Teléfono *<input data-nuevo="telefono" value="${esc(n.telefono || '')}" placeholder="0414-1234567" inputmode="tel"></label>
-      <label>Marca *<input data-nuevo="marca" value="${esc(n.marca || '')}" list="lista-marcas"></label>
-      <label>Modelo *<input data-nuevo="modelo" value="${esc(n.modelo || '')}"></label>
-      <label>Placa *<input data-nuevo="placa" class="upper" value="${esc(n.placa || '')}"></label>
-      <label>Año <span class="opt">(opcional)</span><input data-nuevo="anio" value="${esc(n.anio || '')}" inputmode="numeric" maxlength="4"></label>
-      <label>Color <span class="opt">(opcional)</span><input data-nuevo="color" value="${esc(n.color || '')}"></label>
-    </div>`;
+    ${camposClienteNuevoHTML(n, "rv-nuevo-cliente")}`;
 }
 
 // Estados de una revisión: abierta (se puede modificar), cerrada o cancelada (bloqueada).
@@ -345,7 +347,7 @@ function pintarEditorRev() {
             <button type="button" class="btn small wa" data-rv="wa">Enviar diagnóstico</button>
             <button type="button" class="btn small ghost" data-rv="pdf">⬇ PDF</button>
             <button type="button" class="btn small ghost" data-rv="presupuesto">Crear presupuesto</button>`}
-          <button type="button" class="btn small ghost" data-rv="nueva">+ Nueva</button>
+          <button type="button" class="btn small ghost" data-rv="volver-hist">← Volver al listado</button>
         </div>
       </div>
       <fieldset>
@@ -385,7 +387,7 @@ function pintarEditorRev() {
 
     <div class="rv-barra">
       <span id="rv-progreso"></span>
-      ${bloq ? '<button type="button" class="btn ghost" data-rv="volver-hist">← Historial</button>' : `
+      ${bloq ? '<button type="button" class="btn ghost" data-rv="volver-hist">← Volver al listado</button>' : `
         ${rvNuevo ? '' : '<button type="button" class="btn danger solo-admin" data-rv="borrar">Eliminar</button>'}
         ${rvNuevo ? '' : '<button type="button" class="btn ghost" data-rv="cancelar-rev">Cancelar revisión</button>'}
         ${rvNuevo ? '' : '<button type="button" class="btn ghost" data-rv="cerrar-rev">Cerrar revisión</button>'}
@@ -524,7 +526,7 @@ async function guardarRevision() {
   leerCabeceraRev();
   const r = rvEdit;
   if (!r.vehiculoId && r._otroDe) {
-    const vid = crearVehiculoCliente(r._otroDe, r._vehNuevo || {});
+    const vid = await crearVehiculoCliente(r._otroDe, r._vehNuevo || {});
     if (!vid) return false;
     r.vehiculoId = vid; delete r._otroDe; delete r._vehNuevo;
   }
@@ -533,7 +535,7 @@ async function guardarRevision() {
     const faltan = ['nombre', 'telefono', 'marca', 'modelo', 'placa'].filter((k) => !d[k]);
     if (faltan.length) { alert('Selecciona un cliente registrado o completa los datos del cliente nuevo (nombre, teléfono, marca, modelo y placa).'); return false; }
     if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return false; }
-    const vid = obtenerVehiculoNuevo(d);
+    const vid = await obtenerVehiculoNuevo(d);
     if (!vid) return false;
     r.vehiculoId = vid;
   }
@@ -673,7 +675,7 @@ function pdfRevision(rev) {
 }
 
 // ===================== PRESUPUESTO DESDE REVISIÓN =====================
-function presupuestoDesdeRevision(rev) {
+async function presupuestoDesdeRevision(rev) {
   const pts = puntosActivos(rev);
   const urgentes = pts.filter((p) => estadoDe(rev, p.k) === 'reemplazo');
   const regulares = pts.filter((p) => estadoDe(rev, p.k) === 'regular');
@@ -738,17 +740,20 @@ function renderRevisiones() { renderHistorialRev(); }
 // Una revisión guardada solo se vuelve a abrir desde el historial.
 function reiniciarVistaRevisiones() {
   if (rvDirty) return;
-  if (!rvNuevo || (rvEdit && Object.keys(rvEdit.items).length)) { rvEdit = revisionVacia(); rvNuevo = true; pintarEditorRev(); }
+  rvEdit = revisionVacia(); rvNuevo = true; pintarEditorRev();
+  irSubtabRev('historial');
 }
 
 // ===================== EVENTOS =====================
 function initRevisiones() {
   if (!db.revisiones) db.revisiones = [];
-  $$('.subtab[data-rvtab]').forEach((b) => (b.onclick = () => {
-    if (b.dataset.rvtab === 'historial' && rvDirty && !confirmarSalidaRev()) return;
-    if (b.dataset.rvtab === 'historial') rvDirty = false;
+  $$('.subtab[data-rvtab]').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.rvtab === 'historial') { await volverListaRev(); return; }
+    if (rvDirty && !$('#rv-nueva').hidden && !(await confirmarSalidaRev())) return;
+    if (!$('#rv-nueva').hidden) { rvDirty = false; await nuevaRevision(); }
     irSubtabRev(b.dataset.rvtab);
   }));
+  $('#btn-nueva-rev').onclick = () => nuevaRevision();
   $('#rv-buscar').oninput = renderHistorialRev;
   $('#rv-filtro-tipo').onchange = renderHistorialRev;
   $('#rv-tabla').onclick = (e) => {
@@ -823,19 +828,18 @@ function initRevisiones() {
       case 'cerrar-rev': await cambiarEstadoRev('cerrada'); break;
       case 'cancelar-rev': await cambiarEstadoRev('cancelada'); break;
       case 'reabrir-rev': await cambiarEstadoRev('abierta'); break;
-      case 'volver-hist': rvDirty = false; nuevaRevision(); irSubtabRev('historial'); break;
+      case 'volver-hist': if (rvBloqueada(r)) rvDirty = false; await volverListaRev(); break;
       case 'guardar':
         // Al guardar: limpiar el formulario y mostrar el historial
-        if (await guardarRevision()) { nuevaRevision(); irSubtabRev('historial'); }
+        if (await guardarRevision()) { await nuevaRevision(); irSubtabRev('historial'); }
         break;
-      case 'nueva': nuevaRevision(); break;
       case 'wa': if (rvDirty && !(await guardarRevision())) break; enviarDiagnostico(rvEdit); break;
       case 'pdf': if (rvDirty && !(await guardarRevision())) break; pdfRevision(rvEdit); break;
       case 'presupuesto': if (rvDirty && !(await guardarRevision())) break; presupuestoDesdeRevision(rvEdit); break;
       case 'borrar':
         if (await confirmar(`¿Eliminar la revisión ${numRev(r.numero)}? Esto no se puede deshacer.`)) {
           db.revisiones = db.revisiones.filter((x) => x.id !== r.id);
-          rvDirty = false; await guardar(); nuevaRevision(); irSubtabRev('historial'); toast('Revisión eliminada');
+          rvDirty = false; await guardar(); await nuevaRevision(); irSubtabRev('historial'); toast('Revisión eliminada');
         }
         break;
     }
@@ -863,8 +867,7 @@ function initRevisiones() {
 
   window.addEventListener('beforeunload', (e) => { if (rvDirty) { e.preventDefault(); e.returnValue = ''; } });
 
-  nuevaRevision();
-  renderHistorialRev();
+  nuevaRevision().then(() => irSubtabRev('historial'));
 }
 
 initRevisiones();
