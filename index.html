@@ -188,7 +188,7 @@
     <div class="subtabs">
       <button class="subtab active" data-cfgtab="puntos">Puntos de revisión</button>
       <button class="subtab" data-cfgtab="tecnicos">Técnicos</button>
-      <button class="subtab" data-cfgtab="mensajes">Citas y mensajes</button>
+      <button class="subtab" data-cfgtab="mensajes">Mensajes y citas</button>
       <button class="subtab" data-cfgtab="plantillas">Plantillas de presupuesto</button>
       <button class="subtab" data-cfgtab="aceites">Catálogo de aceites</button>
     </div>
@@ -245,8 +245,9 @@
         <div class="form-head">
           <div>
             <h2>Reparaciones</h2>
-            <p class="hint" style="margin:0">Se crean al aprobar un presupuesto. Registro de lo reparado, sin precios.</p>
+            <p class="hint" style="margin:0">Se crean al aprobar un presupuesto, desde un diagnóstico o manualmente. Registro de lo reparado, sin precios.</p>
           </div>
+          <button type="button" class="btn primary solo-admin" id="btn-nueva-rep">+ Nueva reparación</button>
         </div>
         <div class="filtros">
           <input id="buscar-rep" type="search" placeholder="Buscar por cliente, vehículo, placa, técnico o nota de entrega…">
@@ -273,7 +274,7 @@
     <div class="subtabs">
       <button class="subtab active" data-rvtab="nueva">Nueva revisión</button>
       <button class="subtab" data-rvtab="historial">Historial de revisiones <span id="rv-contador" class="contador"></span></button>
-      <button class="subtab" data-rvtab="ingreso">Diagnóstico / Reparación / Modificación</button>
+      <button class="subtab" data-rvtab="ingreso">Diagnósticos</button>
     </div>
     <div id="rv-nueva"></div>
     <div id="rv-ingreso" hidden></div>

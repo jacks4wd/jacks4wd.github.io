@@ -728,3 +728,6 @@ body.rol-taller .solo-admin { display: none !important; }
   .rv-barra { margin: 0 -10px; flex-wrap: wrap; padding: 8px 10px; }
   .rv-barra #rv-progreso { width: 100%; }
 }
+.tipo-mod { color: #7c3aed; font-weight: 700; font-size: 11px; }
+.rep-items-edit td { vertical-align: middle; }
+.rep-items-edit [data-it="desc"] { width: 100%; }

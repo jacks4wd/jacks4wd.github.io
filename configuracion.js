@@ -145,6 +145,7 @@ const TITULOS_MENSAJES = {
   citaCliente: 'Recordatorio de cita al cliente',
   citaEquipo: 'Aviso de cita al grupo del equipo',
   aceite: 'Recordatorio de cambio de aceite (3 meses)',
+  aprobacionEquipo: 'Reparación aprobada: aviso al grupo del equipo',
   reparacion: 'Seguimiento de reparación (6 meses)',
 };
 
@@ -184,7 +185,7 @@ function pintarCfgMensajes() {
 // Vista previa con datos de ejemplo
 function vistaPreviaMensaje(card) {
   const k = card.dataset.k;
-  const ejemplo = { nombre: 'Carlos', vehiculo: 'Toyota Hilux', placa: 'AB123CD', fecha: 'martes 18 de noviembre', hora: '9:30 a. m.', motivo: 'cambio de aceite', km: '150.000 km', taller: CONFIG.taller, direccion: EMPRESA.direccion };
+  const ejemplo = { nombre: 'Carlos', vehiculo: 'Toyota Prado S150', placa: 'AB123CD', fecha: 'martes 18 de noviembre', hora: '9:30 a. m.', motivo: 'cambio de aceite', km: '150.000 km', taller: CONFIG.taller, direccion: EMPRESA.direccion, tecnico: 'Wilmer González', items: '-Mesetas superiores\n-Mesetas inferiores', numero: '#0005' };
   const txt = msgEdit.mensajes[k].replace(/\{(\w+)\}/g, (_, v) => ejemplo[v] ?? `{${v}}`);
   card.querySelector('[data-vista]').textContent = 'Vista previa: ' + txt;
 }

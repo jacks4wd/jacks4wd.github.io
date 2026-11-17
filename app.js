@@ -23,6 +23,7 @@ const MENSAJES_INICIALES = {
   citaCliente: 'Hola {nombre}, te recordamos tu cita en {taller} el {fecha} a las {hora} para {motivo} de tu {vehiculo}.\n\n' +
     'Te esperamos en {direccion}. Si necesitas cambiar la fecha u hora, respóndenos este mensaje.\n\n— {taller}',
   citaEquipo: '*Cita agendada* — {taller}\nVehículo: {vehiculo} · {placa}\nFecha: {fecha} · {hora}\nMotivo: {motivo}',
+  aprobacionEquipo: '{vehiculo} · {placa}\nTécnico: {tecnico}\n*Reparación aprobada:*\n{items}',
   reparacion: 'Hola {nombre}, han pasado 6 meses desde la última reparación de tu {vehiculo} ({fecha}). ' +
     'Para mantenerlo en óptimas condiciones te invitamos a una revisión de seguimiento, sin costo adicional.\n\n' +
     'Responde este mensaje para agendar tu cita.\n\n— {taller}',
@@ -32,6 +33,7 @@ const VARIABLES_MENSAJES = {
   citaCliente: ['nombre', 'vehiculo', 'placa', 'fecha', 'hora', 'motivo', 'taller', 'direccion'],
   citaEquipo: ['vehiculo', 'placa', 'fecha', 'hora', 'motivo', 'taller'],
   reparacion: ['nombre', 'vehiculo', 'placa', 'fecha', 'taller'],
+  aprobacionEquipo: ['vehiculo', 'placa', 'tecnico', 'items', 'numero', 'taller'],
 };
 const MOTIVOS_CITA_INICIALES = ['Cambio de aceite', 'Revisión general', 'Frenos', 'Suspensión', 'Diagnóstico', 'Presupuesto'];
 
@@ -182,7 +184,7 @@ function normalizarDatos(data) {
   else delete d.config.tecnicos;
   if (d.config.mensajes && typeof d.config.mensajes === 'object') {
     const m = {};
-    ['aceite', 'citaCliente', 'citaEquipo', 'reparacion'].forEach((k) => { if (typeof d.config.mensajes[k] === 'string') m[k] = d.config.mensajes[k].slice(0, 2000); });
+    ['aceite', 'citaCliente', 'citaEquipo', 'reparacion', 'aprobacionEquipo'].forEach((k) => { if (typeof d.config.mensajes[k] === 'string') m[k] = d.config.mensajes[k].slice(0, 2000); });
     d.config.mensajes = m;
   } else delete d.config.mensajes;
   if (Array.isArray(d.config.motivosCita)) d.config.motivosCita = d.config.motivosCita.map((x) => String(x || '').trim().slice(0, 80)).filter((x) => x && x !== 'Otro').slice(0, 50);
@@ -232,7 +234,7 @@ function normalizarDatos(data) {
     if (p.origen && typeof p.origen === 'object') p.origen = { reparacionId: id(p.origen.reparacionId), presupuestoId: id(p.origen.presupuestoId) }; else delete p.origen;
     if (p.aprobacion && typeof p.aprobacion === 'object') {
       p.aprobacion = {
-        fecha: fecha(p.aprobacion.fecha) || hoyISO(), tecnico: String(p.aprobacion.tecnico || ''),
+        fecha: fecha(p.aprobacion.fecha) || hoyISO(), tecnico: String(p.aprobacion.tecnico || ''), equipoInformado: fecha(p.aprobacion.equipoInformado),
         items: lista(p.aprobacion.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), precio: num(it.precio) ?? 0, aprobado: !!it.aprobado })),
       };
     } else delete p.aprobacion;
@@ -244,6 +246,7 @@ function normalizarDatos(data) {
     r.presupuestoNumero = Math.max(0, Math.floor(num(r.presupuestoNumero) || 0));
     ['cliente', 'telefono', 'vehiculo', 'tecnico', 'notas', 'notaEntrega'].forEach((k) => (r[k] = String(r[k] || '')));
     if (r.estado === 'terminada') r.estado = 'culminado'; // nombre anterior
+    if (!['reparacion', 'modificacion'].includes(r.tipo)) r.tipo = 'reparacion';
     if (!['en_proceso', 'culminado', 'cancelado'].includes(r.estado)) r.estado = 'en_proceso';
     r.fechaCierre = fecha(r.fechaCierre); r.cerradoPor = String(r.cerradoPor || '');
     r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));

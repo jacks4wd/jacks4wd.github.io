@@ -33,18 +33,18 @@ function mostrarIngresos() {
       <div class="form-head">
         <div>
           <h2>Diagnóstico / Reparación / Modificación</h2>
-          <p class="hint" style="margin:0">Ingreso rápido para casos específicos. Desde aquí puedes crear un presupuesto o guardarlo directamente en Reparaciones.</p>
+          <p class="hint" style="margin:0">Diagnóstico específico de un vehículo. Desde aquí puedes crear un presupuesto o pasarlo a una reparación (que podrás ajustar antes de guardar).</p>
         </div>
-        <button type="button" class="btn primary" data-ing="nuevo">+ Nuevo ingreso</button>
+        <button type="button" class="btn primary" data-ing="nuevo">+ Nuevo diagnóstico</button>
       </div>
       <input id="ing-buscar" type="search" placeholder="Buscar por cliente, placa, motivo o número…">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Cliente</th><th>Vehículo</th><th>Motivo</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>N°</th><th>Fecha</th><th>Cliente</th><th>Vehículo</th><th>Motivo</th><th>Estado</th><th></th></tr></thead>
           <tbody id="ing-tabla"></tbody>
         </table>
       </div>
-      <p id="ing-vacio" class="vacio" ${lista.length ? 'hidden' : ''}>Aún no hay ingresos.</p>
+      <p id="ing-vacio" class="vacio" ${lista.length ? 'hidden' : ''}>Aún no hay diagnósticos.</p>
     </div>`;
   renderTablaIng();
 }
@@ -53,14 +53,13 @@ function renderTablaIng() {
   const tb = $('#ing-tabla'); if (!tb) return;
   const q = norm($('#ing-buscar')?.value || '').trim();
   const lista = [...(db.ingresos || [])]
-    .filter((x) => { if (!q) return true; const d = datosVehIng(x); return norm([numIng(x.numero), d.nombre, d.placa, d.modelo, x.motivo, TIPOS_ING[x.categoria]].join(' ')).includes(q); })
+    .filter((x) => { if (!q) return true; const d = datosVehIng(x); return norm([numIng(x.numero), d.nombre, d.placa, d.modelo, x.motivo].join(' ')).includes(q); })
     .sort((a, b) => (b.numero || 0) - (a.numero || 0));
   tb.innerHTML = lista.map((x) => {
     const d = datosVehIng(x);
     return `<tr data-ingid="${x.id}">
       <td><strong>${numIng(x.numero)}</strong></td>
       <td>${fmtFecha(x.fecha)}</td>
-      <td>${TIPOS_ING[x.categoria]}</td>
       <td>${esc(d.nombre || '—')}</td>
       <td>${esc(d.modelo)} · ${esc(d.placa)}</td>
       <td>${esc(x.motivo)}</td>
@@ -127,30 +126,29 @@ function pintarFormIng() {
   const pres = x.presupuestoId && (db.presupuestos || []).find((p) => p.id === x.presupuestoId);
   const rep = x.reparacionId && (db.reparaciones || []).find((r) => r.id === x.reparacionId);
   $('#rv-ingreso').innerHTML = `
-    ${bloq ? `<div class="card rv-bloqueo">🔒 Este ingreso está <strong>${ESTADOS_RVS[x.estado].toLowerCase()}</strong>: no se puede modificar.
+    ${bloq ? `<div class="card rv-bloqueo">🔒 Este diagnóstico está <strong>${ESTADOS_RVS[x.estado].toLowerCase()}</strong>: no se puede modificar.
       ${esAdminUI() ? '<button type="button" class="btn small ghost" data-ing="reabrir">Reabrir</button>' : ''}</div>` : ''}
     <div class="card">
       <div class="form-head">
-        <h2>${ingNuevo ? 'Nuevo ingreso' : `${TIPOS_ING[x.categoria]} ${numIng(x.numero)}`}</h2>
+        <h2>${ingNuevo ? 'Nuevo diagnóstico' : `Diagnóstico ${numIng(x.numero)}`}</h2>
         <button type="button" class="btn small ghost" data-ing="volver">← Listado</button>
       </div>
-      <div class="rv-tipos">${Object.entries(TIPOS_ING).map(([k, n]) => `<button type="button" class="rv-tipo ${x.categoria === k ? 'activo' : ''}" data-cat="${k}">${n}</button>`).join('')}</div>
-      <fieldset style="margin-top:12px"><legend>Cliente y vehículo</legend><div id="ing-cliente">${clienteIngHTML(x)}</div></fieldset>
+      <fieldset><legend>Cliente y vehículo</legend><div id="ing-cliente">${clienteIngHTML(x)}</div></fieldset>
       <div class="grid">
         <label>Motivo de ingreso *<input id="ing-motivo" value="${esc(x.motivo)}" placeholder="Ej: instalar suspensión, ruido en tren delantero…"></label>
         <label>Técnico <span class="opt">(opcional)</span><select id="ing-tecnico">${opcionesTecnico(x.tecnico)}</select></label>
         <label>Fecha<input id="ing-fecha" type="date" value="${x.fecha}"></label>
       </div>
-      <label class="full">${x.categoria === 'diagnostico' ? 'Diagnóstico' : x.categoria === 'reparacion' ? 'Reparación a realizar' : 'Modificación a realizar'} <span class="opt">(una línea por cada trabajo o hallazgo; cada línea será un ítem)</span>
-        <textarea id="ing-desc" rows="6" placeholder="Ej:&#10;Kit de suspensión delantera&#10;Amortiguadores traseros&#10;Alineación&#10;Mano de obra">${esc(x.descripcion)}</textarea>
+      <label class="full">Diagnóstico <span class="opt">(una línea por cada hallazgo o trabajo recomendado; cada línea será un ítem al pasarlo a presupuesto o reparación)</span>
+        <textarea id="ing-desc" rows="6" placeholder="Ej:&#10;Bujes de meseta inferior agrietados&#10;Fuga en retén de cigüeñal&#10;Cambio de amortiguadores traseros">${esc(x.descripcion)}</textarea>
       </label>
       ${pres || rep || x.presupuestoId || x.reparacionId ? `<p class="hint">Generado: ${pres ? `presupuesto <a href="#" data-ing="ver-pres">${numPres(pres.numero)}</a>` : x.presupuestoId ? 'presupuesto (sin guardar)' : ''}${(pres || x.presupuestoId) && (rep || x.reparacionId) ? ' · ' : ''}${rep ? `reparación <a href="#" data-ing="ver-rep">${numRep(rep.numero)}</a>` : ''}</p>` : ''}
     </div>
     <div class="rv-barra">
       ${bloq ? '' : `
-        ${ingNuevo ? '' : '<button type="button" class="btn ghost" data-ing="cancelar-ing">Cancelar ingreso</button>'}
+        ${ingNuevo ? '' : '<button type="button" class="btn ghost" data-ing="cancelar-ing">Cancelar diagnóstico</button>'}
         <button type="button" class="btn ghost" data-ing="presupuesto">Crear presupuesto</button>
-        <button type="button" class="btn ghost" data-ing="reparacion">Guardar en Reparaciones</button>
+        <button type="button" class="btn ghost" data-ing="reparacion">Pasar a reparación</button>
         <button type="button" class="btn primary" data-ing="guardar">Guardar</button>`}
       ${ingNuevo ? '' : '<button type="button" class="btn ghost" data-ing="pdf">⬇ PDF</button>'}
     </div>`;
@@ -189,7 +187,7 @@ async function guardarIngreso({ volver = true } = {}) {
   else { const i = db.ingresos.findIndex((y) => y.id === x.id); db.ingresos[i] = JSON.parse(JSON.stringify(x)); }
   ingNuevo = false; ingDirty = false;
   await guardar();
-  toast(`${TIPOS_ING[x.categoria]} ${numIng(x.numero)} guardado`);
+  toast(`Diagnóstico ${numIng(x.numero)} guardado`);
   if (volver) { ingEdit = null; mostrarIngresos(); }
   return true;
 }
@@ -215,29 +213,23 @@ async function presupuestoDesdeIngreso() {
     await guardar(false);
   }
   ingEdit = null;
-  toast(`Presupuesto creado desde ${TIPOS_ING[x.categoria].toLowerCase()} ${numIng(x.numero)}. Completa los precios y guárdalo.`);
+  toast(`Presupuesto creado desde el diagnóstico ${numIng(x.numero)}. Completa los precios y guárdalo.`);
 }
 
-// Guardar directamente en Reparaciones (todos los ítems como aprobados)
+// Pasar a reparación: abre una reparación NUEVA con los datos del diagnóstico, para
+// ajustarla a mano (ítems, tipo, técnico, notas) antes de guardarla.
 async function reparacionDesdeIngreso() {
   if (!(await guardarIngreso({ volver: false }))) return;
   const x = ingEdit;
-  const d = datosVehIng(x);
   const lineas = lineasIng(x);
-  if (!confirm(`¿Crear la reparación con ${lineas.length || 1} ítem(s) como aprobados?`)) return;
-  const rep = {
-    id: uid(), numero: siguienteNumeroRep(), fecha: hoyISO(), tecnico: x.tecnico, notas: `${TIPOS_ING[x.categoria]}: ${x.motivo}`,
-    notaEntrega: '', estado: 'en_proceso', presupuestoId: null, presupuestoNumero: 0, ingresoId: x.id,
-    vehiculoId: x.vehiculoId, cliente: d.nombre, telefono: d.telefono, vehiculo: `${d.modelo} · ${d.placa}`,
-    items: (lineas.length ? lineas : [x.motivo]).map((desc) => ({ cant: 1, unidad: 'Und.', desc, sku: '', estado: 'aprobado' })),
-    creado: new Date().toISOString(),
-  };
-  if (!db.reparaciones) db.reparaciones = [];
-  db.reparaciones.push(rep);
-  const g = db.ingresos.find((y) => y.id === x.id); if (g) { g.reparacionId = rep.id; g.estado = 'cerrada'; }
-  await guardar();
-  ingEdit = null; mostrarIngresos();
-  toast(`Reparación ${numRep(rep.numero)} creada en la pestaña Reparaciones`);
+  ingEdit = null;
+  irA('presupuestos'); irSubtabPres('reparaciones');
+  nuevaReparacion({
+    vehiculoId: x.vehiculoId, tecnico: x.tecnico, ingresoId: x.id,
+    notas: `Diagnóstico ${numIng(x.numero)}: ${x.motivo}`,
+    items: (lineas.length ? lineas : [x.motivo]).map((desc) => ({ cant: 1, unidad: /mano de obra|servicio/i.test(desc) ? 'Serv.' : 'Und.', desc, sku: '', estado: 'aprobado' })),
+  });
+  toast('Ajusta la reparación (ítems, tipo, técnico) y pulsa Guardar.');
 }
 
 function docIngHTML(x) {
@@ -248,7 +240,7 @@ function docIngHTML(x) {
       <img class="doc-logo" src="img/logo.png" alt="Jacks">
       <div class="doc-empresa"><div class="doc-nombre">${EMPRESA.nombre}</div><div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div></div>
     </div>
-    <div class="doc-numero">${TIPOS_ING[x.categoria].toUpperCase()} ${numIng(x.numero)}</div>
+    <div class="doc-numero">DIAGNÓSTICO ${numIng(x.numero)}</div>
     <div class="doc-box">
       <div class="doc-fila2"><div>CLIENTE: ${esc(d.nombre)}</div><div class="r">FECHA: ${fmtFecha(x.fecha)}</div></div>
       <div class="doc-fila2"><div>TELÉFONO: ${esc(d.telefono)}</div><div class="r">VEHÍCULO: ${esc(d.modelo)} · ${esc(d.placa)}</div></div>
@@ -286,7 +278,7 @@ function initIngresos() {
     const fila = t.closest('[data-ingid]');
     if (fila && !ingEdit) {
       const x = db.ingresos.find((y) => y.id === fila.dataset.ingid); if (!x) return;
-      if (t.closest('[data-ingl="pdf"]')) return imprimirDocumento(docIngHTML(x), `${TIPOS_ING[x.categoria]} ${numIng(x.numero).slice(1)} - ${datosVehIng(x).nombre}`);
+      if (t.closest('[data-ingl="pdf"]')) return imprimirDocumento(docIngHTML(x), `Diagnóstico ${numIng(x.numero).slice(1)} - ${datosVehIng(x).nombre}`);
       return abrirIngreso(x.id);
     }
     if (!ingEdit && !t.closest('[data-ing="nuevo"]')) return;
@@ -302,7 +294,7 @@ function initIngresos() {
       case 'guardar': await guardarIngreso(); break;
       case 'presupuesto': await presupuestoDesdeIngreso(); break;
       case 'reparacion': await reparacionDesdeIngreso(); break;
-      case 'pdf': imprimirDocumento(docIngHTML(x), `${TIPOS_ING[x.categoria]} ${numIng(x.numero).slice(1)} - ${datosVehIng(x).nombre}`); break;
+      case 'pdf': imprimirDocumento(docIngHTML(x), `Diagnóstico ${numIng(x.numero).slice(1)} - ${datosVehIng(x).nombre}`); break;
       case 'cambiar-cliente': leerFormIng(); x.vehiculoId = null; delete x._otroDe; ingDirty = true; $('#ing-cliente').innerHTML = clienteIngHTML(x); break;
       case 'otro-vehiculo': leerFormIng(); x._otroDe = vehiculo(x.vehiculoId)?.clienteId; x._vehNuevo = {}; x.vehiculoId = null; ingDirty = true; $('#ing-cliente').innerHTML = clienteIngHTML(x); break;
       case 'cancelar-ing':

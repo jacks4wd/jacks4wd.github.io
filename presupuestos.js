@@ -161,6 +161,32 @@ function cambiarEstadoDesdeLista(p, boton) {
   });
 }
 
+// "Informar al equipo": mensaje al grupo con el vehículo, el técnico y SOLO los ítems aprobados
+// (los rechazados quedan en el registro pero no se envían). Texto editable en Configuración.
+function mensajeAprobacionEquipo(p) {
+  const v = p.vehiculoId && vehiculo(p.vehiculoId);
+  const [modeloTxt, placaTxt] = (p.vehiculo || '').split(' · ');
+  const aprobados = (p.aprobacion?.items || []).filter((it) => it.aprobado);
+  return rellenarMensaje('aprobacionEquipo', {
+    vehiculo: v ? `${v.marca} ${v.modelo}${v.anio ? ' ' + v.anio : ''}` : (modeloTxt || 'Vehículo'),
+    placa: v?.placa || placaTxt || '',
+    tecnico: p.aprobacion?.tecnico || 'por asignar',
+    items: aprobados.map((it) => `-${it.desc}`).join('\n'),
+    numero: numPres(p.numero),
+  }).replace(/ · \n/, '\n');
+}
+
+async function informarEquipoAprobacion(p) {
+  if (!p?.aprobacion) return;
+  // El grupo no se puede abrir directo desde un enlace: se elige el grupo en WhatsApp
+  abrirWhatsApp(null, mensajeAprobacionEquipo(p));
+  const g = db.presupuestos.find((x) => x.id === p.id);
+  if (g?.aprobacion) { g.aprobacion.equipoInformado = hoyISO(); p.aprobacion.equipoInformado = g.aprobacion.equipoInformado; }
+  await guardar(false);
+  pintarPanelEstado();
+  toast('Elige el grupo del equipo en WhatsApp y envía');
+}
+
 // Aviso cuando el presupuesto se creó a partir de los ítems rechazados de una reparación
 function origenPresHTML() {
   const o = presEdit?.origen; if (!o?.reparacionId) return '';
@@ -374,7 +400,7 @@ function pintarPanelEstado() {
       <h3>Estado del presupuesto: <span class="estado-pres ${p.estado}">${ESTADOS_PRES[p.estado]}</span></h3>
       <div class="rep-cerrada">🔒 Su reparación ${numRep(rep.numero)} está <strong>${rep.estado === 'cancelado' ? 'cancelada' : 'culminada'}</strong>. La aprobación ya no se puede modificar.
         ${p.aprobacion ? `<br>Aprobado el ${fmtFecha(p.aprobacion.fecha)} · ${ap.length} de ${p.aprobacion.items.length} ítem(s) · Total aprobado $${fmtUSD(totalesPres({ items: ap }).total)}` : ''}</div>
-      <div class="actions" style="justify-content:flex-start;margin-top:8px"><button type="button" class="btn small primary" data-pact="ver-reparacion">Ver reparación</button></div>
+      <div class="actions" style="justify-content:flex-start;margin-top:8px"><button type="button" class="btn small primary" data-pact="ver-reparacion">Ver reparación</button>${p.aprobacion ? '<button type="button" class="btn small wa" data-pact="informar-equipo">Informar al equipo</button>' : ''}</div>
     </div>`;
     return;
   }
@@ -386,6 +412,7 @@ function pintarPanelEstado() {
     resumen = `<div class="pres-aprob-resumen">
       <div>Aprobado el <strong>${fmtFecha(p.aprobacion.fecha)}</strong> · ${ap.length} de ${p.aprobacion.items.length} ítem(s) · Total aprobado <strong>$${fmtUSD(t.total)}</strong>${p.aprobacion.tecnico ? ` · Técnico: ${esc(p.aprobacion.tecnico)}` : ''}</div>
       <div class="actions" style="justify-content:flex-start;margin-top:8px">
+        <button type="button" class="btn small wa" data-pact="informar-equipo">${p.aprobacion.equipoInformado ? 'Informar de nuevo al equipo' : 'Informar al equipo'}</button>
         <button type="button" class="btn small ghost" data-pact="aprob-modificar">Modificar aprobación</button>
         ${p.reparacionId ? '<button type="button" class="btn small primary" data-pact="ver-reparacion">Ver reparación</button>' : ''}
       </div>
@@ -732,6 +759,7 @@ function initPresupuestos() {
         break;
       }
       case 'aprob-modificar': iniciarAprobacion(); break;
+      case 'informar-equipo': await informarEquipoAprobacion(presEdit); break;
       case 'aprob-cancelar': aprobEdit = null; pintarPanelEstado(); break;
       case 'aprob-confirmar': await confirmarAprobacion(); break;
       case 'ver-reparacion': if (confirmarSalida()) { presDirty = false; irSubtabPres('reparaciones'); abrirReparacion(presEdit.reparacionId); } break;

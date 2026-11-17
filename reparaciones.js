@@ -57,7 +57,7 @@ function renderReparaciones() {
     const ap = r.items.filter((i) => i.estado === 'aprobado').length;
     const re = r.items.length - ap;
     return `<tr data-repid="${r.id}">
-      <td><strong>${numRep(r.numero)}</strong></td>
+      <td><strong>${numRep(r.numero)}</strong>${r.tipo === 'modificacion' ? '<br><small class="tipo-mod">Modificación</small>' : ''}</td>
       <td>${fmtFecha(r.fecha)}</td>
       <td>${esc(r.cliente || '—')}</td>
       <td>${esc(r.vehiculo || '—')}</td>
@@ -98,6 +98,64 @@ function abrirReparacion(id) {
 // Presupuestos creados a partir de los ítems rechazados de esta reparación
 const presupuestosDerivados = (r) => (db.presupuestos || []).filter((p) => p.origen?.reparacionId === r.id);
 
+// ---------- Tipo de trabajo y reparaciones manuales ----------
+const TIPOS_REP = { reparacion: 'Reparación', modificacion: 'Modificación' };
+const tipoRep = (r) => TIPOS_REP[r?.tipo] || 'Reparación';
+// Las reparaciones manuales o creadas desde un diagnóstico (sin presupuesto) tienen ítems editables
+const itemsManuales = (r) => !r.presupuestoId;
+let repNueva = false;
+
+// Nueva reparación manual (solo admin). pre: datos iniciales (p. ej. desde un diagnóstico)
+function nuevaReparacion(pre = {}) {
+  if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) return;
+  repEdit = {
+    id: uid(), numero: 0, fecha: hoyISO(), tipo: 'reparacion', tecnico: '', notas: '', notaEntrega: '', estado: 'en_proceso',
+    presupuestoId: null, presupuestoNumero: 0, vehiculoId: null, cliente: '', telefono: '', vehiculo: '',
+    items: [{ cant: 1, unidad: 'Und.', desc: '', sku: '', estado: 'aprobado' }], ...pre,
+  };
+  if (repEdit.vehiculoId) asignarVehiculoRep(repEdit.vehiculoId);
+  repNueva = true; repDirty = !!pre.items;
+  pintarEditorRep();
+  mostrarEditorRep(true);
+}
+
+function asignarVehiculoRep(vid) {
+  const v = vehiculo(vid); if (!v) return;
+  const c = cliente(v.clienteId);
+  Object.assign(repEdit, { vehiculoId: v.id, cliente: c?.nombre || '', telefono: c?.telefono || '', vehiculo: `${v.marca} ${v.modelo}${v.anio ? ' ' + v.anio : ''} · ${v.placa}` });
+}
+
+function clienteRepHTML(r) {
+  if (r.vehiculoId && vehiculo(r.vehiculoId)) {
+    return `<div class="seleccion rv-sel-cliente">
+      <div><strong>${esc(r.cliente)}</strong> · ${esc(r.telefono)}<br>${esc(r.vehiculo)}</div>
+      <div class="rv-sel-botones">
+        <button type="button" class="btn small ghost" data-rep="otro-vehiculo">+ Otro vehículo de este cliente</button>
+        <button type="button" class="btn small ghost" data-rep="cambiar-cliente">Cambiar</button>
+      </div>
+    </div>`;
+  }
+  if (r._otroDe && cliente(r._otroDe)) {
+    const c = cliente(r._otroDe);
+    return `<div class="seleccion rv-sel-cliente"><div><strong>${esc(c.nombre)}</strong> · ${esc(c.telefono)}<br><span class="hint">Nuevo vehículo para este cliente:</span></div>
+      <button type="button" class="btn small ghost" data-rep="cambiar-cliente">Cancelar</button></div>
+      <div id="rep-otro-veh" style="margin-top:8px">${camposVehiculoHTML(r._vehNuevo || {})}</div>`;
+  }
+  const n = r._nuevo || {};
+  return `<input id="rep-buscar-cliente" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…" autocomplete="off">
+    <div id="rep-res-cliente" class="picker-list"></div>
+    <p class="hint rv-o">o registra un cliente nuevo:</p>
+    <div class="grid" id="rep-nuevo-cliente">
+      <label>Nombre *<input data-nuevo="nombre" value="${esc(n.nombre || '')}"></label>
+      <label>Teléfono *<input data-nuevo="telefono" value="${esc(n.telefono || '')}" placeholder="0414-1234567" inputmode="tel"></label>
+      <label>Marca *<input data-nuevo="marca" value="${esc(n.marca || '')}" list="lista-marcas"></label>
+      <label>Modelo *<input data-nuevo="modelo" value="${esc(n.modelo || '')}"></label>
+      <label>Placa *<input data-nuevo="placa" class="upper" value="${esc(n.placa || '')}"></label>
+      <label>Año <span class="opt">(opcional)</span><input data-nuevo="anio" value="${esc(n.anio || '')}" inputmode="numeric" maxlength="4"></label>
+      <label>Color <span class="opt">(opcional)</span><input data-nuevo="color" value="${esc(n.color || '')}"></label>
+    </div>`;
+}
+
 function itemsRepHTML(r, editable) {
   return r.items.map((it, i) => `<tr data-ri="${i}">
     <td>${fmtCant(it.cant)} ${esc(it.unidad)}</td>
@@ -109,37 +167,56 @@ function itemsRepHTML(r, editable) {
   </tr>`).join('');
 }
 
+// Ítems editables (reparaciones manuales o desde diagnóstico)
+function itemsEditablesHTML(r) {
+  return r.items.map((it, i) => `<tr data-ri="${i}">
+    <td class="col-cant"><input data-it="cant" inputmode="decimal" value="${fmtCant(it.cant)}" aria-label="Cantidad">
+      <select data-it="unidad" aria-label="Unidad">${[...new Set([...UNIDADES, it.unidad || 'Und.'])].map((u) => `<option ${u === it.unidad ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>
+    <td><input data-it="desc" value="${esc(it.desc)}" placeholder="Descripción del trabajo o pieza"></td>
+    <td><button type="button" class="rep-estado ${it.estado}" data-rep="toggle" title="Tocar para cambiar">${it.estado === 'aprobado' ? 'Aprobado' : 'Rechazado'}</button></td>
+    <td><button type="button" class="btn tiny ghost" data-rep="quitar-item" title="Quitar">✕</button></td>
+  </tr>`).join('');
+}
+
 function pintarEditorRep() {
   const r = repEdit;
   const cerrada = esCerrada(r);
   const bloqueada = cerrada || soloLectura(); // el rol taller solo puede ver
+  const editarItems = !bloqueada && (repNueva || itemsManuales(r));
   const otro = r.tecnico && !tecnicos().includes(r.tecnico);
-  const rechazados = r.items.filter((i) => i.estado === 'rechazado').length;
-  const derivados = presupuestosDerivados(r);
+  const rechazados = r.items.filter((i) => i.estado === 'rechazado' && i.desc).length;
+  const derivados = repNueva ? [] : presupuestosDerivados(r);
   $('#rep-editor').innerHTML = `
     <div class="card pres-toolbar">
       <button class="btn ghost" data-rep="volver">← Reparaciones</button>
-      <span class="estado-rep ${r.estado}">${ESTADOS_REP[r.estado]}</span>
+      ${repNueva ? '<strong>Nueva reparación</strong>' : `<span class="estado-rep ${r.estado}">${ESTADOS_REP[r.estado]}</span>`}
       <span class="spacer"></span>
-      ${r.presupuestoId ? '<button class="btn ghost" data-rep="presupuesto">Ver presupuesto</button>' : ''}
-      ${rechazados ? '<button class="btn ghost" data-rep="nuevo-presupuesto">Crear otro presupuesto</button>' : ''}
-      ${cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
-      <button class="btn ghost" data-rep="pdf">⬇ PDF</button>
+      ${!repNueva && r.presupuestoId ? '<button class="btn ghost" data-rep="presupuesto">Ver presupuesto</button>' : ''}
+      ${!repNueva && rechazados ? '<button class="btn ghost" data-rep="nuevo-presupuesto">Crear otro presupuesto</button>' : ''}
+      ${repNueva || cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
+      ${repNueva ? '' : '<button class="btn ghost" data-rep="pdf">⬇ PDF</button>'}
       <button class="btn primary" data-rep="guardar">Guardar</button>
     </div>
+    ${repNueva ? `
+      <div class="card">
+        <h3 style="margin-top:0">Tipo de trabajo</h3>
+        <div class="rv-tipos">${Object.entries(TIPOS_REP).map(([k, n]) => `<button type="button" class="rv-tipo ${r.tipo === k ? 'activo' : ''}" data-rep="tipo" data-tipo="${k}">${n}</button>`).join('')}</div>
+        <fieldset style="margin-top:12px"><legend>Cliente y vehículo</legend><div id="rep-cliente">${clienteRepHTML(r)}</div></fieldset>
+      </div>` : `
     <div class="card rep-estado-card">
       ${cerrada ? `
-        <div class="rep-cerrada">🔒 Reparación <strong>${r.estado === 'cancelado' ? 'cancelada' : 'culminada'}</strong>${r.fechaCierre ? ` el ${fmtFecha(r.fechaCierre)}` : ''}${r.cerradoPor ? ` por ${esc(r.cerradoPor)}` : ''}.
+        <div class="rep-cerrada">🔒 ${tipoRep(r)} <strong>${r.estado === 'cancelado' ? 'cancelada' : 'culminada'}</strong>${r.fechaCierre ? ` el ${fmtFecha(r.fechaCierre)}` : ''}${r.cerradoPor ? ` por ${esc(r.cerradoPor)}` : ''}.
           Los ítems, el técnico y el estado ya no se pueden modificar. Solo puedes agregar notas y el número de nota de entrega.</div>`
       : `
         <div class="rep-estado-acciones">
-          <span>Estado de la reparación:</span>
+          <span>Estado:</span>
           <button type="button" class="pres-est-b culminado" data-rep="culminar">✔ Culminado</button>
           <button type="button" class="pres-est-b cancelado" data-rep="cancelar">✖ Cancelado</button>
         </div>
-        <p class="hint" style="margin:6px 0 0"><strong>Culminado:</strong> vehículo listo, probado y entregado. <strong>Cancelado:</strong> el cliente lo retiró sin reparar (todos los ítems pasan a "rechazado"). Ambos son definitivos: la reparación queda bloqueada.</p>`}
+        <p class="hint" style="margin:6px 0 0"><strong>Culminado:</strong> vehículo listo, probado y entregado (requiere el N° de nota de entrega). <strong>Cancelado:</strong> el cliente lo retiró sin reparar (todos los ítems pasan a "rechazado"). Ambos son definitivos.</p>
+        ${editarItems ? `<div class="rv-tipos" style="margin-top:10px">${Object.entries(TIPOS_REP).map(([k, n]) => `<button type="button" class="rv-tipo ${r.tipo === k ? 'activo' : ''}" data-rep="tipo" data-tipo="${k}">${n}</button>`).join('')}</div>` : ''}`}
       ${derivados.length ? `<p class="hint" style="margin:8px 0 0">Presupuestos creados a partir de esta reparación: ${derivados.map((p) => `<a href="#" data-rep="abrir-pres" data-pid="${p.id}">${numPres(p.numero)}</a> (${ESTADOS_PRES[p.estado] || p.estado})`).join(', ')}</p>` : ''}
-    </div>
+    </div>`}
     <form id="form-rep" class="doc doc-editor" autocomplete="off">
       <div class="doc-head">
         <img class="doc-logo" src="img/logo.png" alt="Jacks">
@@ -148,7 +225,7 @@ function pintarEditorRep() {
           <div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div>
         </div>
       </div>
-      <div class="doc-numero">REPARACIÓN ${numRep(r.numero)}${r.presupuestoNumero ? ` <small class="rep-sub">· Presupuesto ${numPres(r.presupuestoNumero)}</small>` : ''}</div>
+      <div class="doc-numero">${tipoRep(r).toUpperCase()} ${repNueva ? '(nueva)' : numRep(r.numero)}${r.presupuestoNumero ? ` <small class="rep-sub">· Presupuesto ${numPres(r.presupuestoNumero)}</small>` : ''}</div>
       <div class="doc-box">
         <div class="doc-fila2"><div>CLIENTE: ${esc(r.cliente)}</div><div class="r">FECHA: ${fmtFecha(r.fecha)}</div></div>
         <div class="doc-fila2"><div>TELÉFONO: ${esc(r.telefono)}</div><div class="r">VEHÍCULO: ${esc(r.vehiculo)}</div></div>
@@ -158,13 +235,20 @@ function pintarEditorRep() {
           <div class="r">ESTADO: <strong>${ESTADOS_REP[r.estado]}</strong></div>
         </div>
       </div>
-      <table class="doc-items rep-tabla">
-        <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>SKU</th><th>ESTADO</th></tr></thead>
-        <tbody>${itemsRepHTML(r, !bloqueada)}</tbody>
-      </table>
-      ${cerrada ? '' : '<p class="hint">Toca el estado de un ítem para cambiarlo (por ejemplo, si el cliente aprueba después un ítem rechazado).</p>'}
+      ${editarItems ? `
+        <table class="doc-items rep-tabla rep-items-edit">
+          <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>ESTADO</th><th></th></tr></thead>
+          <tbody id="rep-items-edit">${itemsEditablesHTML(r)}</tbody>
+        </table>
+        <div class="doc-add"><button type="button" class="btn small ghost" data-rep="agregar-item">+ Agregar ítem</button></div>`
+      : `
+        <table class="doc-items rep-tabla">
+          <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>SKU</th><th>ESTADO</th></tr></thead>
+          <tbody>${itemsRepHTML(r, !bloqueada)}</tbody>
+        </table>
+        ${bloqueada ? '' : '<p class="hint">Toca el estado de un ítem para cambiarlo (por ejemplo, si el cliente aprueba después un ítem rechazado).</p>'}`}
       <div class="doc-obs" style="border-top:1px solid #111">
-        <div class="lbl">Notas de la reparación</div>
+        <div class="lbl">Notas</div>
         <textarea id="rep-notas" rows="3" ${soloLectura() ? 'readonly' : ''} placeholder="Ej: garantía de 3 meses en piezas; reemplazo solo bujes, no muñones: el ruido continuará…">${esc(r.notas)}</textarea>
       </div>
       <div class="rep-nota-entrega">
@@ -183,6 +267,49 @@ function leerEditorRep() {
   }
   r.notas = $('#rep-notas').value.trim();
   r.notaEntrega = $('#rep-nota-entrega').value.trim();
+  // Ítems editables
+  const filas = $$('#rep-items-edit tr');
+  if (filas.length || $('#rep-items-edit')) {
+    r.items = filas.map((tr, i) => {
+      const g = (n) => tr.querySelector(`[data-it="${n}"]`).value;
+      const cant = parseDec(g('cant'));
+      return { cant: Number.isFinite(cant) ? cant : 1, unidad: g('unidad'), desc: g('desc').trim(), sku: r.items[i]?.sku || '', estado: r.items[i]?.estado || 'aprobado' };
+    });
+  }
+  // Cliente (nueva reparación)
+  if (repNueva && !r.vehiculoId) {
+    if (r._otroDe && $('#rep-otro-veh')) r._vehNuevo = leerCamposVehiculo($('#rep-otro-veh'));
+    else { r._nuevo = {}; $$('#rep-nuevo-cliente [data-nuevo]').forEach((i) => (r._nuevo[i.dataset.nuevo] = i.value.trim())); }
+  }
+}
+
+// Guarda una reparación nueva (manual o desde diagnóstico)
+async function guardarReparacionNueva() {
+  leerEditorRep();
+  const r = repEdit;
+  if (!r.vehiculoId && r._otroDe) {
+    const vid = crearVehiculoCliente(r._otroDe, r._vehNuevo || {}); if (!vid) return false;
+    asignarVehiculoRep(vid);
+  }
+  if (!r.vehiculoId) {
+    const d = r._nuevo || {};
+    if (['nombre', 'telefono', 'marca', 'modelo', 'placa'].some((k) => !d[k])) { alert('Selecciona un cliente registrado o completa los datos del cliente nuevo (nombre, teléfono, marca, modelo y placa).'); return false; }
+    if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return false; }
+    const vid = obtenerVehiculoNuevo(d); if (!vid) return false;
+    asignarVehiculoRep(vid);
+  }
+  r.items = r.items.filter((it) => it.desc);
+  if (!r.items.length) { alert('Agrega al menos un ítem a la reparación.'); r.items.push({ cant: 1, unidad: 'Und.', desc: '', sku: '', estado: 'aprobado' }); return false; }
+  delete r._nuevo; delete r._otroDe; delete r._vehNuevo;
+  r.numero = siguienteNumeroRep(); r.creado = new Date().toISOString(); r.actualizado = r.creado;
+  if (!db.reparaciones) db.reparaciones = [];
+  db.reparaciones.push(JSON.parse(JSON.stringify(r)));
+  // Si viene de un diagnóstico, el diagnóstico queda cerrado y enlazado
+  if (r.ingresoId) { const g = (db.ingresos || []).find((x) => x.id === r.ingresoId); if (g) { g.reparacionId = r.id; g.estado = 'cerrada'; } }
+  repNueva = false; repDirty = false;
+  await guardar();
+  toast(`${tipoRep(r)} ${numRep(r.numero)} creada`);
+  return true;
 }
 
 // Cierra una reparación como culminada o cancelada (definitivo).
@@ -253,6 +380,12 @@ async function guardarReparacion(silencioso = false) {
     // Cerrada: solo notas y nota de entrega
     Object.assign(actual, { notas: r.notas, notaEntrega: r.notaEntrega, actualizado: r.actualizado });
     repEdit = JSON.parse(JSON.stringify(actual));
+  } else if (actual && itemsManuales(actual)) {
+    // Manual o desde diagnóstico: ítems y tipo editables
+    const items = r.items.filter((it) => it.desc);
+    if (!items.length) { alert('La reparación debe tener al menos un ítem.'); return false; }
+    Object.assign(actual, { tecnico: r.tecnico, notas: r.notas, notaEntrega: r.notaEntrega, tipo: r.tipo || 'reparacion', items, actualizado: r.actualizado });
+    repEdit = JSON.parse(JSON.stringify(actual));
   } else if (actual) {
     Object.assign(actual, { tecnico: r.tecnico, notas: r.notas, notaEntrega: r.notaEntrega, actualizado: r.actualizado });
     const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
@@ -261,12 +394,13 @@ async function guardarReparacion(silencioso = false) {
   }
   repDirty = false;
   await guardar();
-  if (!silencioso) toast(`Reparación ${numRep(r.numero)} guardada`);
+  if (!silencioso) toast(`${tipoRep(r)} ${numRep(r.numero)} guardada`);
+  return true;
 }
 
 function volverAListaRep() {
   if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) return;
-  repEdit = null; repDirty = false;
+  repEdit = null; repDirty = false; repNueva = false;
   mostrarEditorRep(false);
   renderReparaciones();
 }
@@ -281,7 +415,7 @@ function docRepHTML(r) {
         <div>${EMPRESA.direccion}</div><div>Telf: ${EMPRESA.telefono}</div><div>R.I.F: ${EMPRESA.rif}</div>
       </div>
     </div>
-    <div class="doc-numero">REPARACIÓN ${numRep(r.numero)}</div>
+    <div class="doc-numero">${tipoRep(r).toUpperCase()} ${numRep(r.numero)}</div>
     <div class="doc-box">
       <div class="doc-fila2"><div>CLIENTE: ${esc(r.cliente)}</div><div class="r">FECHA: ${fmtFecha(r.fecha)}</div></div>
       <div class="doc-fila2"><div>TELÉFONO: ${esc(r.telefono)}</div><div class="r">VEHÍCULO: ${esc(r.vehiculo)}</div></div>
@@ -323,18 +457,47 @@ function initReparaciones() {
     abrirReparacion(r.id);
   };
 
+  $('#btn-nueva-rep').onclick = () => nuevaReparacion();
+
   const ed = $('#rep-editor');
-  ed.addEventListener('input', () => { repDirty = true; });
+  ed.addEventListener('input', (e) => {
+    if (e.target.id === 'rep-buscar-cliente') {
+      const lista = buscarVehiculos(e.target.value).slice(0, 6);
+      $('#rep-res-cliente').innerHTML = lista.map((v) => `<div class="resultado" data-pickrep="${v.id}"><div><strong>${esc(cliente(v.clienteId).nombre)}</strong> <small>${esc(cliente(v.clienteId).telefono)}</small><br><small>${esc(v.marca)} ${esc(v.modelo)}</small></div><strong>${esc(v.placa)}</strong></div>`).join('');
+      return;
+    }
+    repDirty = true;
+  });
   ed.addEventListener('change', (e) => {
     repDirty = true;
     if (e.target.id === 'rep-tecnico') { const o = $('#rep-tecnico-otro'); o.hidden = e.target.value !== '__otro'; if (!o.hidden) o.focus(); }
   });
   ed.addEventListener('submit', (e) => e.preventDefault());
   ed.addEventListener('click', async (e) => {
+    const pick = e.target.closest('[data-pickrep]');
+    if (pick && repEdit) { leerEditorRep(); asignarVehiculoRep(pick.dataset.pickrep); delete repEdit._otroDe; repDirty = true; pintarEditorRep(); return; }
     const b = e.target.closest('[data-rep]'); if (!b || !repEdit) return;
     switch (b.dataset.rep) {
       case 'volver': volverAListaRep(); break;
-      case 'guardar': await guardarReparacion(); volverAListaRep(); break;
+      case 'guardar':
+        if (repNueva) { if (await guardarReparacionNueva()) volverAListaRep(); }
+        else if (await guardarReparacion() !== false) volverAListaRep();
+        break;
+      case 'tipo': leerEditorRep(); repEdit.tipo = b.dataset.tipo; repDirty = true; pintarEditorRep(); break;
+      case 'agregar-item':
+        leerEditorRep(); repEdit.items.push({ cant: 1, unidad: 'Und.', desc: '', sku: '', estado: 'aprobado' }); repDirty = true; pintarEditorRep();
+        $$('#rep-items-edit [data-it="desc"]').at(-1)?.focus();
+        break;
+      case 'quitar-item': leerEditorRep(); repEdit.items.splice(Number(b.closest('tr').dataset.ri), 1); repDirty = true; pintarEditorRep(); break;
+      case 'cambiar-cliente':
+        leerEditorRep(); Object.assign(repEdit, { vehiculoId: null, cliente: '', telefono: '', vehiculo: '' }); delete repEdit._otroDe; repDirty = true; pintarEditorRep(); break;
+      case 'otro-vehiculo': {
+        leerEditorRep();
+        const cid = vehiculo(repEdit.vehiculoId)?.clienteId;
+        Object.assign(repEdit, { vehiculoId: null, vehiculo: '', _otroDe: cid, _vehNuevo: {} }); repDirty = true; pintarEditorRep();
+        $('#rep-otro-veh [data-veh="marca"]')?.focus();
+        break;
+      }
       case 'culminar':
       case 'cancelar': {
         const id = repEdit.id;
