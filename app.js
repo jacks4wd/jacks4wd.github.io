@@ -1926,3 +1926,22 @@ async function abrirEnlaceCliente(vid, desde = null) {
     catch (err) { const box = $('#qr-box'); if (box) box.textContent = err.message; }
   }
 }
+
+// Vehículo registrado de un presupuesto o reparación: por su vehiculoId o, si se escribió
+// a mano, por la placa que aparece en el texto del vehículo ("Toyota Prado · AB123CD").
+function vehiculoDeDoc(d) {
+  if (d?.vehiculoId && vehiculo(d.vehiculoId)) return d.vehiculoId;
+  const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const texto = norm(d?.vehiculo);
+  const v = db.vehiculos.filter((x) => norm(x.placa).length >= 5 && texto.includes(norm(x.placa)))
+    .sort((a, b) => norm(b.placa).length - norm(a.placa).length)[0];
+  return v ? v.id : null;
+}
+function abrirEnlaceDoc(d, desde) {
+  const vid = vehiculoDeDoc(d);
+  if (!vid) {
+    avisar('Este documento no tiene un vehículo registrado asociado (el cliente se escribió a mano y la placa no coincide con ningún vehículo registrado). Registra el vehículo o asígnalo en el documento con «Buscar cliente» y vuelve a intentarlo.');
+    return;
+  }
+  abrirEnlaceCliente(vid, desde);
+}

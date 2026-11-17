@@ -99,6 +99,7 @@ function renderPresupuestos() {
       <td class="acciones-fila">
         <button class="btn tiny ghost" data-pact="editar-lista" data-pid="${p.id}" title="Modificar">✏️</button>
         <button class="btn tiny ghost" data-pact="pdf-lista" data-pid="${p.id}">PDF</button>
+        <button class="btn tiny ghost solo-admin" data-pact="enlace-lista" data-pid="${p.id}" title="Enlace / QR del historial del cliente">QR</button>
         <button class="btn tiny wa" data-pact="wa-lista" data-pid="${p.id}">WhatsApp</button>
       </td>
     </tr>`).join('');
@@ -251,6 +252,7 @@ function pintarEditor() {
       <span class="spacer"></span>
       ${presNuevo ? '' : '<button class="btn ghost" data-pact="duplicar">Duplicar</button><button class="btn danger" data-pact="borrar">Eliminar</button>'}
       <button class="btn ghost" data-pact="pdf">⬇ PDF</button>
+      ${presNuevo ? '' : '<button class="btn ghost solo-admin" data-pact="enlace" title="Enlace personal para que el cliente vea el historial de su vehículo">Enlace / QR</button>'}
       <button class="btn wa" data-pact="wa">WhatsApp</button>
       <button class="btn primary" data-pact="guardar">Guardar</button>
     </div>
@@ -676,6 +678,7 @@ function initPresupuestos() {
     const p = db.presupuestos.find((x) => x.id === (b || e.target.closest('[data-pid]'))?.dataset.pid);
     if (!p) return;
     if (b?.dataset.pact === 'pdf-lista') return exportarPDF(p);
+    if (b?.dataset.pact === 'enlace-lista') return abrirEnlaceDoc(p, 'presupuestos');
     if (b?.dataset.pact === 'editar-lista') return abrirPresupuesto(p.id);
     if (b?.dataset.pact === 'estado-lista') return cambiarEstadoDesdeLista(p, b);
     if (b?.dataset.pact === 'wa-lista') return enviarWhatsApp(p);
@@ -756,6 +759,7 @@ function initPresupuestos() {
     }
     switch (b.dataset.pact) {
       case 'volver': volverALista(); break;
+      case 'enlace': leerEditor(); abrirEnlaceDoc(presEdit, 'presupuestos'); break;
       case 'estado': {
         const est = b.dataset.estado;
         if (presDirty && !(await guardarPresupuesto(true))) break;

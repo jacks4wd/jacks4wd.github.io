@@ -117,6 +117,7 @@ function renderReparaciones() {
       <td class="acciones-fila">
         <button class="btn tiny ghost" data-replista="editar" title="${soloLectura() ? 'Ver' : 'Modificar'}">${soloLectura() ? '👁' : '✏️'}</button>
         <button class="btn tiny ghost" data-replista="pdf">PDF</button>
+        ${soloLectura() ? '' : '<button class="btn tiny ghost" data-replista="enlace" title="Enlace / QR del historial del cliente">QR</button>'}
       </td>
     </tr>`;
   }).join('');
@@ -234,7 +235,7 @@ function pintarEditorRep() {
       ${repNueva || cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
       ${!repNueva && cerrada && !soloLectura() && vigente(r) ? '<button class="btn ghost" data-rep="corregir" title="Crear una nueva versión con el mismo número">✎ Corregir (nueva versión)</button>' : ''}
       ${repNueva ? '' : '<button class="btn ghost" data-rep="pdf">⬇ PDF</button>'}
-      ${!repNueva && !soloLectura() && r.vehiculoId && vehiculo(r.vehiculoId) ? `<button class="btn ghost" data-rep="enlace" title="Enlace personal para que el cliente vea el historial de su vehículo">${vehiculo(r.vehiculoId).token ? 'Enlace / QR del cliente' : 'Crear enlace / QR'}</button>` : ''}
+      ${!repNueva && !soloLectura() ? '<button class="btn ghost" data-rep="enlace" title="Enlace personal para que el cliente vea el historial de su vehículo">Enlace / QR</button>' : ''}
       <button class="btn primary" data-rep="guardar">Guardar</button>
     </div>
     ${repNueva ? `
@@ -491,6 +492,7 @@ function initReparaciones() {
     const tr = e.target.closest('[data-repid]'); if (!tr) return;
     const r = db.reparaciones.find((x) => x.id === tr.dataset.repid); if (!r) return;
     const b = e.target.closest('[data-replista]');
+    if (b?.dataset.replista === 'enlace') return abrirEnlaceDoc(r, 'reparaciones');
     if (b?.dataset.replista === 'pdf') return imprimirDocumento(docRepHTML(r), `Reparacion ${numRep(r.numero).slice(1)}${r.cliente ? ' - ' + r.cliente : ''}`);
     if (b?.dataset.replista === 'estado') {
       return menuEstado(b, Object.entries(ESTADOS_REP).map(([valor, texto]) => ({ valor, texto, clase: valor, actual: valor === r.estado })), async (nuevo) => {
@@ -572,7 +574,7 @@ function initReparaciones() {
         it.estado = it.estado === 'aprobado' ? 'rechazado' : 'aprobado';
         repDirty = true; pintarEditorRep(); break;
       }
-      case 'enlace': abrirEnlaceCliente(repEdit.vehiculoId, 'reparaciones'); break;
+      case 'enlace': abrirEnlaceDoc(repEdit, 'reparaciones'); break;
       case 'pdf':
         if (repDirty) await guardarReparacion(true);
         imprimirDocumento(docRepHTML(repEdit), `Reparacion ${numRep(repEdit.numero).slice(1)}${repEdit.cliente ? ' - ' + repEdit.cliente : ''}`);
