@@ -878,7 +878,10 @@ function renderRegistros() {
   const q = $('#buscar-registros').value;
   const filtro = $('#filtro-estado').value;
   let lista = q.trim() ? buscarVehiculos(q) : [...db.vehiculos];
+  // Solo vehículos con al menos un cambio de aceite (los creados desde revisiones,
+  // diagnósticos, presupuestos o reparaciones se ven en sus propias pestañas)
   const filas = lista.map((v) => ({ v, c: cliente(v.clienteId), u: ultimoServicio(v.id), e: estadoVehiculo(v.id) }))
+    .filter((x) => x.u && x.c)
     .filter((x) => !filtro || x.e.clave === filtro)
     .sort((a, b) => (b.u?.fecha || '').localeCompare(a.u?.fecha || ''));
   $('#tabla-registros').innerHTML = filas.map(({ v, c, u, e }) => `
@@ -899,7 +902,7 @@ function renderRegistros() {
       </td>
     </tr>`).join('');
   $('#vacio-registros').hidden = filas.length > 0;
-  $('#vacio-registros').textContent = db.vehiculos.length ? 'Ningún registro coincide con la búsqueda.' : 'No hay registros todavía.';
+  $('#vacio-registros').textContent = db.servicios.length ? 'Ningún registro coincide con la búsqueda.' : 'Aún no hay cambios de aceite registrados.';
 }
 
 function abrirModal(html) { $('#modal-body').innerHTML = html; const m = $('#modal'); if (!m.open) m.showModal(); }
