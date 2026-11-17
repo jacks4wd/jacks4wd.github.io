@@ -310,6 +310,19 @@
   <div id="modal-body"></div>
 </dialog>
 
+<!-- Avisos y confirmaciones propios de la app (reemplazan los del navegador) -->
+<dialog id="dialogo" class="dialogo">
+  <form method="dialog" id="dialogo-form">
+    <h3 id="dialogo-titulo">Aviso</h3>
+    <p id="dialogo-texto"></p>
+    <div id="dialogo-campo"></div>
+    <div class="actions">
+      <button type="button" class="btn ghost" id="dialogo-no">Cancelar</button>
+      <button type="submit" class="btn primary" id="dialogo-si">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" class="toast" hidden></div>
 <div id="print-area"></div>
 

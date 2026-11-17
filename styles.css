@@ -1,3 +1,6 @@
+/* Lo marcado como oculto se oculta siempre (evita que otros estilos lo muestren) */
+[hidden] { display: none !important; }
+
 :root {
   --bg: #f3f4f6;
   --card: #ffffff;
@@ -731,3 +734,10 @@ body.rol-taller .solo-admin { display: none !important; }
 .tipo-mod { color: #7c3aed; font-weight: 700; font-size: 11px; }
 .rep-items-edit td { vertical-align: middle; }
 .rep-items-edit [data-it="desc"] { width: 100%; }
+/* Ventana de avisos propia */
+.dialogo { width: min(440px, calc(100vw - 32px)); }
+.dialogo form { padding: 20px; }
+.dialogo h3 { margin: 0 0 8px; }
+.dialogo p { white-space: pre-line; margin: 0 0 14px; color: #374151; }
+.dialogo .actions { margin-top: 10px; }
+.dialogo label { margin-bottom: 6px; }

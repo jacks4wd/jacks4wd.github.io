@@ -364,7 +364,7 @@ const Nube = (() => {
 
   async function cerrarSesion(automatico = false) {
     if (automatico !== true && ((typeof presDirty !== 'undefined' && presDirty) || (typeof rvDirty !== 'undefined' && rvDirty))) {
-      if (!confirm('Hay cambios sin guardar. ¿Cerrar sesión de todas formas?')) return;
+      if (!await confirmarSinGuardar()) return;
     }
     await (sincronizando || Promise.resolve()).catch(() => {});
     try { await fetch(`${CFG.url}/auth/v1/logout`, { method: 'POST', headers: { apikey: CFG.clave, Authorization: 'Bearer ' + sesion?.access_token } }); } catch { /* sin conexión */ }

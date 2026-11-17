@@ -276,7 +276,7 @@ function initConfiguracion() {
       case 'bajar': mover(msgEdit.motivos, i, 1); break;
       case 'restaurar': {
         const k = b.closest('[data-k]').dataset.k;
-        if (!confirm(`¿Restaurar el texto original de "${TITULOS_MENSAJES[k]}"?`)) return;
+        if (!await confirmar(`¿Restaurar el texto original de "${TITULOS_MENSAJES[k]}"?`)) return;
         msgEdit.mensajes[k] = MENSAJES_INICIALES[k]; break;
       }
       case 'var': {
@@ -317,7 +317,7 @@ function initConfiguracion() {
     switch (b.dataset.pl) {
       case 'guardar': await guardarCfgPlantillas(); return;
       case 'nueva': plEdit.push({ id: claveNueva('pl'), nombre: '', items: [''] }); break;
-      case 'borrar': if (!confirm(`¿Eliminar la plantilla "${plEdit[p].nombre || 'sin nombre'}"?`)) return; plEdit.splice(p, 1); break;
+      case 'borrar': if (!await confirmar(`¿Eliminar la plantilla "${plEdit[p].nombre || 'sin nombre'}"?`)) return; plEdit.splice(p, 1); break;
       case 'agregar-item': plEdit[p].items.push(''); break;
       case 'borrar-item': plEdit[p].items.splice(i, 1); break;
       case 'subir': mover(plEdit[p].items, i, -1); break;
@@ -364,19 +364,19 @@ function initConfiguracion() {
     switch (accion) {
       case 'guardar': await guardarCfgPuntos(); return;
       case 'restaurar':
-        if (!confirm('¿Volver a los puntos de revisión originales? Se perderán los cambios hechos en esta lista.')) return;
+        if (!await confirmar('¿Volver a los puntos de revisión originales? Se perderán los cambios hechos en esta lista.')) return;
         cfgEdit = copiar(CONFIG_REVISION_INICIAL); break;
       case 'agregar-sec': secs.push({ t: 'Nueva sección', items: [{ k: claveNueva('p'), n: '', tipo: 'normal' }] }); break;
       case 'subir-sec': mover(secs, s, -1); break;
       case 'bajar-sec': mover(secs, s, 1); break;
       case 'borrar-sec':
-        if (!confirm(`¿Eliminar la sección "${secs[s].t}" y sus ${secs[s].items.length} punto(s)?`)) return;
+        if (!await confirmar(`¿Eliminar la sección "${secs[s].t}" y sus ${secs[s].items.length} punto(s)?`)) return;
         secs.splice(s, 1); break;
       case 'agregar-item': secs[s].items.push({ k: claveNueva('p'), n: '', tipo: 'normal' }); break;
       case 'subir': mover(secs[s].items, i, -1); break;
       case 'bajar': mover(secs[s].items, i, 1); break;
       case 'borrar-item':
-        if (!confirm(`¿Eliminar el punto "${secs[s].items[i].n || 'sin nombre'}"?`)) return;
+        if (!await confirmar(`¿Eliminar el punto "${secs[s].items[i].n || 'sin nombre'}"?`)) return;
         secs[s].items.splice(i, 1); break;
       case 'agregar-sub': secs[s].items[i].sub.push({ k: claveNueva('s'), n: '' }); break;
       case 'borrar-sub': secs[s].items[i].sub.splice(Number(b.closest('[data-sub]').dataset.sub), 1); break;

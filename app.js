@@ -342,22 +342,62 @@ function menuEstado(ancla, opciones, alElegir) {
   m.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b || b.disabled) return; m.remove(); document.removeEventListener('click', cerrar, true); alElegir(b.dataset.v); };
 }
 
+// ---------- Ventanas propias de la app (reemplazan alert/confirm/prompt del navegador,
+// que muestran "<dirección> dice:" y no se pueden personalizar) ----------
+const colaDialogos = [];
+let dialogoActivo = false;
+function mostrarDialogo(op) {
+  return new Promise((resolver) => { colaDialogos.push({ op, resolver }); siguienteDialogo(); });
+}
+function siguienteDialogo() {
+  if (dialogoActivo || !colaDialogos.length) return;
+  dialogoActivo = true;
+  const { op, resolver } = colaDialogos.shift();
+  const d = $('#dialogo');
+  $('#dialogo-titulo').textContent = op.titulo || (op.tipo === 'confirmar' ? 'Confirmar' : 'Aviso');
+  $('#dialogo-texto').textContent = op.texto || '';
+  const campo = $('#dialogo-campo');
+  campo.innerHTML = op.tipo === 'dato' ? `<label>${esc(op.etiqueta || '')}<input id="dialogo-input" value="${esc(op.valor || '')}" placeholder="${esc(op.placeholder || '')}"></label>` : '';
+  const si = $('#dialogo-si'); const no = $('#dialogo-no');
+  si.textContent = op.si || (op.tipo === 'aviso' ? 'Entendido' : 'Aceptar');
+  no.textContent = op.no || 'Cancelar';
+  no.hidden = op.tipo === 'aviso';
+  si.className = 'btn ' + (op.peligro ? 'danger' : 'primary');
+  let listo = false;
+  const fin = (valor) => {
+    if (listo) return; listo = true;
+    if (d.open) d.close();
+    dialogoActivo = false; resolver(valor); setTimeout(siguienteDialogo, 0);
+  };
+  $('#dialogo-form').onsubmit = (e) => {
+    e.preventDefault();
+    if (op.tipo === 'dato') { const v = $('#dialogo-input').value.trim(); if (!v) { $('#dialogo-input').focus(); return; } fin(v); }
+    else fin(true);
+  };
+  no.onclick = () => fin(op.tipo === 'dato' ? null : false);
+  d.oncancel = (e) => { e.preventDefault(); fin(op.tipo === 'dato' ? null : (op.tipo === 'aviso' ? true : false)); };
+  d.showModal();
+  setTimeout(() => (op.tipo === 'dato' ? $('#dialogo-input') : si).focus(), 30);
+}
+// confirmar('¿…?') → true / false
+function confirmar(texto, opciones = {}) {
+  return mostrarDialogo({ tipo: 'confirmar', texto, ...opciones });
+}
+// Aviso informativo (no detiene el código; se usa en lugar de alert)
+function avisar(texto, opciones = {}) { return mostrarDialogo({ tipo: 'aviso', texto, ...opciones }); }
+window.alert = (texto) => { avisar(String(texto ?? '')); };
 // Pide un dato en una ventana (devuelve el texto, o null si se cancela)
 function pedirDato({ titulo, texto, etiqueta, valor = '', placeholder = '', boton = 'Aceptar' }) {
-  return new Promise((resolver) => {
-    abrirModal(`
-      <h3>${esc(titulo)}</h3>
-      ${texto ? `<p class="hint">${texto}</p>` : ''}
-      <form id="form-dato"><label>${esc(etiqueta)}<input name="dato" value="${esc(valor)}" placeholder="${esc(placeholder)}" required></label>
-        <div class="actions" style="margin-top:12px"><button type="button" class="btn ghost" id="dato-cancelar">Cancelar</button><button class="btn primary">${esc(boton)}</button></div>
-      </form>`);
-    const f = $('#form-dato'); f.dato.focus(); f.dato.select();
-    let listo = false;
-    const fin = (v) => { if (listo) return; listo = true; cerrarModal(); resolver(v); };
-    f.onsubmit = (e) => { e.preventDefault(); const v = f.dato.value.trim(); if (v) fin(v); };
-    $('#dato-cancelar').onclick = () => fin(null);
-    $('#modal').addEventListener('close', () => fin(null), { once: true });
-  });
+  return mostrarDialogo({ tipo: 'dato', titulo, texto: texto ? texto.replace(/<[^>]+>/g, '') : '', etiqueta, valor, placeholder, si: boton });
+}
+// Reemplazo de prompt(): pide un texto corto
+function pedirTexto(etiqueta, valor = '') {
+  return pedirDato({ titulo: 'Dato requerido', etiqueta, valor });
+}
+// Aviso estándar de cambios sin guardar
+const AVISO_SIN_GUARDAR = 'Tienes cambios sin guardar en esta pestaña. Si sales ahora se perderán.';
+function confirmarSinGuardar() {
+  return confirmar(AVISO_SIN_GUARDAR, { titulo: 'Aviso', si: 'Salir sin guardar', no: 'Seguir editando', peligro: true });
 }
 
 function toast(msg) {
@@ -495,7 +535,7 @@ async function importar(file) {
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.clientes) || !Array.isArray(data.vehiculos)) throw new Error('Formato no válido');
-    if (!confirm(`Esto reemplazará los datos actuales por los del archivo (${data.clientes.length} clientes). ¿Continuar?`)) return;
+    if (!await confirmar(`Esto reemplazará los datos actuales por los del archivo (${data.clientes.length} clientes). ¿Continuar?`)) return;
     db = normalizarDatos(data);
     await guardar();
     toast('Copia importada');
@@ -551,7 +591,7 @@ function crearVehiculoCliente(clienteId, d) {
   if (existente) {
     if (existente.clienteId === clienteId) return existente.id;
     const c = cliente(existente.clienteId);
-    if (!confirm(`La placa ${placa} ya está registrada a nombre de ${c?.nombre || 'otro cliente'} (${existente.marca} ${existente.modelo}).\n¿Usar ese vehículo de todas formas?`)) return null;
+    if (!await confirmar(`La placa ${placa} ya está registrada a nombre de ${c?.nombre || 'otro cliente'} (${existente.marca} ${existente.modelo}).\n¿Usar ese vehículo de todas formas?`)) return null;
     return existente.id;
   }
   const v = { id: uid(), clienteId, marca: d.marca, modelo: d.modelo, placa, anio: d.anio || '', color: d.color || '', creado: new Date().toISOString() };
@@ -742,7 +782,7 @@ function formAceite(a = null) {
   };
   const b = $('#borrar-aceite');
   if (b) b.onclick = async () => {
-    if (!confirm(`¿Eliminar ${a.marca} ${a.linea} ${a.viscosidad} del catálogo? Los registros ya guardados conservan su información.`)) return;
+    if (!await confirmar(`¿Eliminar ${a.marca} ${a.linea} ${a.viscosidad} del catálogo? Los registros ya guardados conservan su información.`)) return;
     db.aceites = db.aceites.filter((x) => x.id !== a.id);
     await guardar(); cerrarModal();
   };
@@ -823,14 +863,14 @@ async function guardarNuevo(e) {
   if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos (ej. 0414-1234567).'); return; }
   d.km = parseKm(d.km); d.proximoKm = parseKm(d.proximoKm);
   if (!Number.isFinite(d.km) || !Number.isFinite(d.proximoKm)) { alert('Revisa el KM actual y el próximo KM.'); return; }
-  if (d.proximoKm <= d.km) { if (!confirm('El próximo KM es menor o igual al KM actual. ¿Guardar de todas formas?')) return; }
+  if (d.proximoKm <= d.km) { if (!await confirmar('El próximo KM es menor o igual al KM actual. ¿Guardar de todas formas?')) return; }
 
   // Si se escribió a mano una placa que ya existe, usar ese vehículo.
   if (!sel.vehiculoId) {
     const existente = db.vehiculos.find((v) => v.placa === d.placa);
     if (existente) {
       const c = cliente(existente.clienteId);
-      if (!confirm(`La placa ${d.placa} ya está registrada (${existente.marca} ${existente.modelo} de ${c.nombre}).\n¿Agregar este cambio de aceite a ese vehículo?`)) return;
+      if (!await confirmar(`La placa ${d.placa} ya está registrada (${existente.marca} ${existente.modelo} de ${c.nombre}).\n¿Agregar este cambio de aceite a ese vehículo?`)) return;
       sel.vehiculoId = existente.id; sel.clienteId = existente.clienteId;
     }
   }
@@ -838,7 +878,7 @@ async function guardarNuevo(e) {
   if (!sel.clienteId) {
     const tel = telWhatsApp(d.telefono);
     const existente = db.clientes.find((c) => telWhatsApp(c.telefono) === tel);
-    if (existente && confirm(`Ya existe un cliente con ese teléfono: ${existente.nombre}.\n¿Asignarle este vehículo?`)) sel.clienteId = existente.id;
+    if (existente && await confirmar(`Ya existe un cliente con ese teléfono: ${existente.nombre}.\n¿Asignarle este vehículo?`)) sel.clienteId = existente.id;
   }
 
   const ahora = new Date().toISOString();
@@ -1300,7 +1340,7 @@ function mensajeCitaGrupo(ct) {
 async function enviarCitaCliente(ct) {
   let tel = tituloCita(ct).tel;
   if (soloDigitos(tel).length < 10) {
-    tel = (prompt('Número de WhatsApp del cliente (ej: 0414-1234567):', tel || '') || '').trim();
+    tel = (await pedirTexto('Número de WhatsApp del cliente (ej: 0414-1234567):', tel || '') || '').trim();
     if (!tel) return;
     if (soloDigitos(tel).length < 10) { alert('El número debe tener al menos 10 dígitos.'); return; }
     if (!ct.vehiculoId) ct.telefonoLibre = tel;
@@ -1434,7 +1474,7 @@ function formCita(ct = null, preVid = null) {
     await guardar(); cerrarModal(); toast('Cita guardada');
   };
   const b = $('#borrar-cita');
-  if (b) b.onclick = async () => { if (confirm('¿Eliminar esta cita?')) { db.citas = db.citas.filter((x) => x.id !== ct.id); await guardar(); cerrarModal(); } };
+  if (b) b.onclick = async () => { if (await confirmar('¿Eliminar esta cita?')) { db.citas = db.citas.filter((x) => x.id !== ct.id); await guardar(); cerrarModal(); } };
 }
 
 function agendarDesdeVehiculo(vid) {
@@ -1527,12 +1567,12 @@ function init() {
       case 'editar-s': editarServicio(sid); break;
       case 'borrar-s': {
         const s = db.servicios.find((x) => x.id === sid);
-        if (confirm(`¿Borrar el cambio de aceite del ${fmtFecha(s.fecha)}?`)) { db.servicios = db.servicios.filter((x) => x.id !== sid); await guardar(); verDetalle(s.vehiculoId); }
+        if (await confirmar(`¿Borrar el cambio de aceite del ${fmtFecha(s.fecha)}?`)) { db.servicios = db.servicios.filter((x) => x.id !== sid); await guardar(); verDetalle(s.vehiculoId); }
         break;
       }
       case 'borrar-v': {
         const v = vehiculo(vid);
-        if (confirm(`¿Eliminar ${v.marca} ${v.modelo} (${v.placa}) y todo su historial? Esto no se puede deshacer.`)) {
+        if (await confirmar(`¿Eliminar ${v.marca} ${v.modelo} (${v.placa}) y todo su historial? Esto no se puede deshacer.`)) {
           db.vehiculos = db.vehiculos.filter((x) => x.id !== vid);
           db.servicios = db.servicios.filter((x) => x.vehiculoId !== vid);
           db.revisiones = db.revisiones.filter((x) => x.vehiculoId !== vid);

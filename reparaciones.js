@@ -107,7 +107,7 @@ let repNueva = false;
 
 // Nueva reparación manual (solo admin). pre: datos iniciales (p. ej. desde un diagnóstico)
 function nuevaReparacion(pre = {}) {
-  if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) return;
+  if (repDirty && !await confirmarSinGuardar()) return;
   repEdit = {
     id: uid(), numero: 0, fecha: hoyISO(), tipo: 'reparacion', tecnico: '', notas: '', notaEntrega: '', estado: 'en_proceso',
     presupuestoId: null, presupuestoNumero: 0, vehiculoId: null, cliente: '', telefono: '', vehiculo: '',
@@ -332,7 +332,7 @@ async function cerrarRep(id, estado) {
   const texto = estado === 'culminado'
     ? `¿Marcar la reparación ${numRep(actual.numero)} como CULMINADA (nota de entrega ${nota})?\n\nÚsalo cuando el vehículo esté listo, probado y entregado.\nDespués no se podrán modificar los ítems, el técnico ni el estado.`
     : `¿CANCELAR la reparación ${numRep(actual.numero)}?\n\nÚsalo cuando el cliente retiró el vehículo sin realizar la reparación.\nTodos los ítems pasarán a "Rechazado" y después no se podrá modificar.`;
-  if (!confirm(texto)) return false;
+  if (!await confirmar(texto)) return false;
   if (enEditor) {
     const r = repEdit;
     const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
@@ -399,7 +399,7 @@ async function guardarReparacion(silencioso = false) {
 }
 
 function volverAListaRep() {
-  if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) return;
+  if (repDirty && !await confirmarSinGuardar()) return;
   repEdit = null; repDirty = false; repNueva = false;
   mostrarEditorRep(false);
   renderReparaciones();
@@ -437,8 +437,8 @@ function docRepHTML(r) {
 function initReparaciones() {
   if (!db.reparaciones) db.reparaciones = [];
   $$('.subtab[data-prtab]').forEach((b) => (b.onclick = () => {
-    if (b.dataset.prtab === 'reparaciones' && typeof presDirty !== 'undefined' && presDirty && !confirm('El presupuesto tiene cambios sin guardar. ¿Salir sin guardar?')) return;
-    if (b.dataset.prtab === 'presupuestos' && repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) return;
+    if (b.dataset.prtab === 'reparaciones' && typeof presDirty !== 'undefined' && presDirty && !await confirmarSinGuardar()) return;
+    if (b.dataset.prtab === 'presupuestos' && repDirty && !await confirmarSinGuardar()) return;
     if (b.dataset.prtab === 'reparaciones') presDirty = false; else repDirty = false;
     irSubtabPres(b.dataset.prtab);
   }));
@@ -527,7 +527,7 @@ function initReparaciones() {
         imprimirDocumento(docRepHTML(repEdit), `Reparacion ${numRep(repEdit.numero).slice(1)}${repEdit.cliente ? ' - ' + repEdit.cliente : ''}`);
         break;
       case 'presupuesto':
-        if (repDirty && !confirm('La reparación tiene cambios sin guardar. ¿Salir sin guardar?')) break;
+        if (repDirty && !await confirmarSinGuardar()) break;
         {
           // Se cierra la reparación para que no quede una copia vieja abierta
           const pid = repEdit.presupuestoId;
@@ -537,7 +537,7 @@ function initReparaciones() {
         break;
       case 'borrar':
         if (esCerrada(repEdit)) { alert('Una reparación culminada o cancelada no se puede eliminar.'); break; }
-        if (!confirm(`¿Eliminar la reparación ${numRep(repEdit.numero)}? El presupuesto aprobado se conserva.`)) break;
+        if (!await confirmar(`¿Eliminar la reparación ${numRep(repEdit.numero)}? El presupuesto aprobado se conserva.`)) break;
         db.reparaciones = db.reparaciones.filter((x) => x.id !== repEdit.id);
         db.presupuestos.forEach((p) => { if (p.reparacionId === repEdit.id) delete p.reparacionId; });
         repDirty = false; await guardar(); volverAListaRep(); toast('Reparación eliminada');

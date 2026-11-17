@@ -220,12 +220,12 @@ function obtenerVehiculoNuevo(d) {
   const existente = db.vehiculos.find((v) => v.placa === placa);
   if (existente) {
     const c = cliente(existente.clienteId);
-    if (!confirm(`La placa ${placa} ya está registrada (${existente.marca} ${existente.modelo} de ${c?.nombre || 'cliente'}).\n¿Usar ese vehículo?`)) return null;
+    if (!await confirmar(`La placa ${placa} ya está registrada (${existente.marca} ${existente.modelo} de ${c?.nombre || 'cliente'}).\n¿Usar ese vehículo?`)) return null;
     return existente.id;
   }
   const ahora = new Date().toISOString();
   let c = db.clientes.find((x) => telWhatsApp(x.telefono) === telWhatsApp(d.telefono));
-  if (c && !confirm(`Ya existe un cliente con ese teléfono: ${c.nombre}.\n¿Asignarle este vehículo?`)) c = null;
+  if (c && !await confirmar(`Ya existe un cliente con ese teléfono: ${c.nombre}.\n¿Asignarle este vehículo?`)) c = null;
   if (!c) { c = { id: uid(), nombre: d.nombre, telefono: d.telefono, creado: ahora }; db.clientes.push(c); }
   const v = { id: uid(), clienteId: c.id, marca: d.marca, modelo: d.modelo, placa, anio: d.anio, color: d.color, creado: ahora };
   db.vehiculos.push(v);
@@ -247,7 +247,7 @@ function revisionVacia(vid = null) {
 }
 
 function confirmarSalidaRev() {
-  return !rvDirty || confirm('La revisión tiene cambios sin guardar. ¿Salir sin guardar?');
+  return !rvDirty || await confirmarSinGuardar();
 }
 
 function irSubtabRev(cual) {
@@ -404,8 +404,8 @@ async function cambiarEstadoRev(estado) {
     const txt = estado === 'cerrada'
       ? `¿Cerrar la revisión ${numRev(r.numero)}? Después no se podrá modificar${esAdminUI() ? ' (un administrador puede reabrirla)' : ''}.`
       : `¿Cancelar la revisión ${numRev(r.numero)}? Después no se podrá modificar${esAdminUI() ? ' (un administrador puede reabrirla)' : ''}.`;
-    if (!confirm(txt)) return;
-  } else if (!confirm(`¿Reabrir la revisión ${numRev(r.numero)} para modificarla?`)) return;
+    if (!await confirmar(txt)) return;
+  } else if (!await confirmar(`¿Reabrir la revisión ${numRev(r.numero)} para modificarla?`)) return;
   const g = db.revisiones.find((x) => x.id === r.id); if (!g) return;
   g.estado = estado;
   g.fechaCierre = estado === 'abierta' ? null : hoyISO();
@@ -540,7 +540,7 @@ async function guardarRevision() {
   if (!r.tecnico) { alert('Asigna un técnico a la revisión.'); $('#rv-tecnico').focus(); return false; }
   const c = conteo(r);
   if (c.total === c.pendientes) { alert('Evalúa al menos un punto antes de guardar.'); return false; }
-  if (c.pendientes && !confirm(`Quedan ${c.pendientes} punto(s) sin evaluar. ¿Guardar de todas formas?`)) return false;
+  if (c.pendientes && !await confirmar(`Quedan ${c.pendientes} punto(s) sin evaluar. ¿Guardar de todas formas?`)) return false;
 
   // Limpiar datos de puntos que ya no están activos (p. ej. traseras desmarcadas)
   const activos = new Set(puntosActivos(r).map((p) => p.k));
@@ -613,7 +613,7 @@ async function enviarDiagnostico(rev) {
   const d = datosVehiculoRev(rev);
   let tel = d.telefono;
   if (soloDigitos(tel).length < 10) {
-    tel = (prompt('Número de WhatsApp del cliente (ej: 0414-1234567):', tel || '') || '').trim();
+    tel = (await pedirTexto('Número de WhatsApp del cliente (ej: 0414-1234567):', tel || '') || '').trim();
     if (soloDigitos(tel).length < 10) return;
   }
   const texto = mensajeDiagnostico(rev);
@@ -678,7 +678,7 @@ function presupuestoDesdeRevision(rev) {
   const urgentes = pts.filter((p) => estadoDe(rev, p.k) === 'reemplazo');
   const regulares = pts.filter((p) => estadoDe(rev, p.k) === 'regular');
   let elegidos = urgentes;
-  if (regulares.length && confirm(`¿Incluir también los ${regulares.length} punto(s) en estado regular?\n(Aceptar = sí, Cancelar = solo los de reemplazo inmediato)`)) elegidos = [...urgentes, ...regulares];
+  if (regulares.length && await confirmar(`¿Incluir también los ${regulares.length} punto(s) en estado regular?\n(Aceptar = sí, Cancelar = solo los de reemplazo inmediato)`)) elegidos = [...urgentes, ...regulares];
   const items = elegidos.map((p) => {
     const it = rev.items[p.k];
     let desc = p.n;
@@ -833,7 +833,7 @@ function initRevisiones() {
       case 'pdf': if (rvDirty && !(await guardarRevision())) break; pdfRevision(rvEdit); break;
       case 'presupuesto': if (rvDirty && !(await guardarRevision())) break; presupuestoDesdeRevision(rvEdit); break;
       case 'borrar':
-        if (confirm(`¿Eliminar la revisión ${numRev(r.numero)}? Esto no se puede deshacer.`)) {
+        if (await confirmar(`¿Eliminar la revisión ${numRev(r.numero)}? Esto no se puede deshacer.`)) {
           db.revisiones = db.revisiones.filter((x) => x.id !== r.id);
           rvDirty = false; await guardar(); nuevaRevision(); irSubtabRev('historial'); toast('Revisión eliminada');
         }

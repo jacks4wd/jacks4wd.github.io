@@ -154,7 +154,7 @@ function cambiarEstadoDesdeLista(p, boton) {
   if (esCerrada(rep)) { toast(`Su reparación ${numRep(rep.numero)} ya está cerrada; el estado no se puede cambiar.`); return; }
   menuEstado(boton, Object.entries(ESTADOS_PRES).map(([valor, texto]) => ({ valor, texto, clase: valor, actual: valor === p.estado })), async (nuevo) => {
     if (nuevo === 'aprobado') { abrirPresupuesto(p.id); iniciarAprobacion(); return; }
-    if (p.estado === 'aprobado' && p.reparacionId && !confirm(`El presupuesto pasará a "${ESTADOS_PRES[nuevo]}". La reparación ya creada se conserva. ¿Continuar?`)) return;
+    if (p.estado === 'aprobado' && p.reparacionId && !await confirmar(`El presupuesto pasará a "${ESTADOS_PRES[nuevo]}". La reparación ya creada se conserva. ¿Continuar?`)) return;
     p.estado = nuevo;
     await guardar();
     toast(`Presupuesto ${numPres(p.numero)} marcado como ${ESTADOS_PRES[nuevo].toLowerCase()}`);
@@ -465,7 +465,7 @@ async function confirmarAprobacion() {
 async function cambiarEstadoSimple(estado) {
   const p = presEdit;
   if (p.reparacionId && esCerrada((db.reparaciones || []).find((r) => r.id === p.reparacionId))) { alert('La reparación de este presupuesto ya está cerrada; el estado no se puede cambiar.'); return; }
-  if (p.estado === 'aprobado' && p.reparacionId && !confirm(`El presupuesto pasará a "${ESTADOS_PRES[estado]}". La reparación ya creada se conserva en la pestaña Reparaciones. ¿Continuar?`)) return;
+  if (p.estado === 'aprobado' && p.reparacionId && !await confirmar(`El presupuesto pasará a "${ESTADOS_PRES[estado]}". La reparación ya creada se conserva en la pestaña Reparaciones. ¿Continuar?`)) return;
   p.estado = estado; aprobEdit = null;
   const g = db.presupuestos.find((x) => x.id === p.id); if (g) g.estado = estado;
   await guardar();
@@ -536,7 +536,7 @@ async function guardarPresupuesto(silencioso = false) {
 
 function confirmarSalida() {
   if (!presDirty) return true;
-  return confirm('Este presupuesto tiene cambios sin guardar. ¿Salir sin guardar?');
+  return await confirmarSinGuardar();
 }
 
 function volverALista() {
@@ -646,7 +646,7 @@ function mensajePresupuesto(p) {
 async function enviarWhatsApp(p) {
   let tel = (p.telefono || '').trim();
   if (soloDigitos(tel).length < 10) {
-    tel = (prompt('Número de WhatsApp del cliente (ej: 0414-1234567):', tel) || '').trim();
+    tel = (await pedirTexto('Número de WhatsApp del cliente (ej: 0414-1234567):', tel) || '').trim();
     if (!tel) return;
     if (soloDigitos(tel).length < 10) { alert('El número debe tener al menos 10 dígitos.'); return; }
     p.telefono = tel;
@@ -801,7 +801,7 @@ function initPresupuestos() {
         break;
       }
       case 'borrar':
-        if (confirm(`¿Eliminar el presupuesto ${numPres(presEdit.numero)}? Esto no se puede deshacer.`)) {
+        if (await confirmar(`¿Eliminar el presupuesto ${numPres(presEdit.numero)}? Esto no se puede deshacer.`)) {
           db.presupuestos = db.presupuestos.filter((x) => x.id !== presEdit.id);
           presDirty = false; await guardar(); volverALista(); toast('Presupuesto eliminado');
         }

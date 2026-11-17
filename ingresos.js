@@ -83,7 +83,7 @@ function nuevoIngreso() {
   pintarFormIng();
 }
 function volverListaIng() {
-  if (ingDirty && !confirm('El ingreso tiene cambios sin guardar. ¿Salir sin guardar?')) return;
+  if (ingDirty && !await confirmarSinGuardar()) return;
   ingEdit = null; ingDirty = false;
   mostrarIngresos();
 }
@@ -268,7 +268,7 @@ function initIngresos() {
     if (!ingEdit) return;
     ingDirty = true;
     if (e.target.id === 'ing-tecnico' && e.target.value === '__otro') {
-      const n = (prompt('Nombre del técnico:', '') || '').trim();
+      const n = (await pedirTexto('Nombre del técnico:', '') || '').trim();
       leerFormIng(); if (n) ingEdit.tecnico = n; pintarFormIng();
     }
   });
@@ -298,10 +298,10 @@ function initIngresos() {
       case 'cambiar-cliente': leerFormIng(); x.vehiculoId = null; delete x._otroDe; ingDirty = true; $('#ing-cliente').innerHTML = clienteIngHTML(x); break;
       case 'otro-vehiculo': leerFormIng(); x._otroDe = vehiculo(x.vehiculoId)?.clienteId; x._vehNuevo = {}; x.vehiculoId = null; ingDirty = true; $('#ing-cliente').innerHTML = clienteIngHTML(x); break;
       case 'cancelar-ing':
-        if (!confirm('¿Cancelar este ingreso? Después no se podrá modificar.')) break;
+        if (!await confirmar('¿Cancelar este ingreso? Después no se podrá modificar.')) break;
         await marcarEstadoIng('cancelada'); ingEdit = null; mostrarIngresos(); break;
       case 'reabrir':
-        if (!confirm('¿Reabrir este ingreso para modificarlo?')) break;
+        if (!await confirmar('¿Reabrir este ingreso para modificarlo?')) break;
         await marcarEstadoIng('abierta'); pintarFormIng(); break;
       case 'ver-pres': e.preventDefault(); { const id = x.presupuestoId; ingEdit = null; irA('presupuestos'); irSubtabPres('presupuestos'); abrirPresupuesto(id); } break;
       case 'ver-rep': e.preventDefault(); { const id = x.reparacionId; ingEdit = null; irA('presupuestos'); irSubtabPres('reparaciones'); abrirReparacion(id); } break;
