@@ -14,7 +14,7 @@ const GRUPOS_CFG = { basica: 'Revisión básica', completa: 'Adicional en la rev
 
 function irSubtabCfg(cual) {
   $$('.subtab[data-cfgtab]').forEach((b) => b.classList.toggle('active', b.dataset.cfgtab === cual));
-  ['puntos', 'tecnicos', 'mensajes', 'plantillas', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
+  ['puntos', 'tecnicos', 'mensajes', 'plantillas', 'garantias', 'aceites'].forEach((c) => ($('#cfg-' + c).hidden = c !== cual));
   if (cual === 'mensajes') {
     if (!msgDirty) msgEdit = { motivos: [...motivosCita()], mensajes: Object.fromEntries(Object.keys(TITULOS_MENSAJES).map((k) => [k, textoMensaje(k)])) };
     pintarCfgMensajes();
@@ -22,6 +22,7 @@ function irSubtabCfg(cual) {
   if (cual === 'plantillas') { if (!plDirty) plEdit = copiar(plantillasPres()); pintarCfgPlantillas(); }
   if (cual === 'puntos') { if (!cfgDirty) cfgEdit = copiar(configRevision()); pintarCfgPuntos(); }
   if (cual === 'tecnicos') { if (!tecDirty) tecEdit = [...tecnicos()]; pintarCfgTecnicos(); }
+  if (cual === 'garantias') { if (!gDirty) gEdit = copiar(polizaActual()); pintarCfgGarantias(); }
   if (cual === 'aceites') renderCatalogo();
 }
 
@@ -474,7 +475,177 @@ ${usan.length} punto(s) que lo usan volverán a los 4 botones normales.` : ''}`)
     }
   });
 
-  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty || plDirty || msgDirty) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (cfgDirty || tecDirty || plDirty || msgDirty || gDirty) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 initConfiguracion();
+
+// ===================== PÓLIZA DE GARANTÍAS =====================
+// Se edita aquí y se muestra en la página pública garantias.html (enlace de los presupuestos).
+let gEdit = null;
+let gDirty = false;
+const polizaActual = () => limpiarPoliza(db.config?.garantias || POLIZA_INICIAL);
+const getP = (path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), gEdit);
+function setP(path, val) { const ks = path.split('.'); const ult = ks.pop(); ks.reduce((o, k) => o[k], gEdit)[ult] = val; }
+const inicialesG = (n) => String(n || '').replace(/\(.*?\)/g, '').trim().split(/\s+/).map((p) => p[0] || '').join('').slice(0, 3).toUpperCase();
+
+function marcarG() {
+  gDirty = true;
+  const b = $('#cfg-garantias [data-gar="guardar"]'); if (b) b.textContent = 'Guardar •';
+}
+
+function pintarCfgGarantias() {
+  const p = gEdit;
+  const mover = (arr, i) => `<button type="button" class="btn tiny ghost" data-gar="subir" data-arr="${arr}" data-i="${i}" title="Subir">↑</button>
+    <button type="button" class="btn tiny ghost" data-gar="bajar" data-arr="${arr}" data-i="${i}" title="Bajar">↓</button>
+    <button type="button" class="btn tiny danger" data-gar="quitar" data-arr="${arr}" data-i="${i}" title="Quitar">✕</button>`;
+  const cabecera = (clave, conNota = true) => `
+    <label>Título de la sección<input data-path="${clave}.titulo" value="${esc(p[clave].titulo)}"></label>
+    ${conNota ? `<label style="margin-top:8px">Texto debajo del título <span class="opt">(opcional)</span><input data-path="${clave}.nota" value="${esc(p[clave].nota || '')}"></label>` : ''}`;
+  const tablaTiempos = (clave, etiqueta, boton) => `
+    <div class="card">
+      ${cabecera(clave)}
+      <div class="g-filas">${p[clave].filas.map((f, i) => `
+        <div class="g-fila">
+          <button type="button" class="g-logo" data-gar="logo" data-arr="${clave}.filas" data-i="${i}" title="Cambiar logo">
+            ${f.logo ? `<img src="${esc(f.logo)}" alt="">` : `<span>${esc(inicialesG(f.nombre)) || '+'}</span>`}<small>${f.logo ? 'Cambiar' : 'Logo'}</small>
+          </button>
+          <input data-path="${clave}.filas.${i}.nombre" value="${esc(f.nombre)}" placeholder="${etiqueta}">
+          <input class="g-tiempo" data-path="${clave}.filas.${i}.tiempo" value="${esc(f.tiempo)}" placeholder="Ej: 1 año" list="lista-tiempos-gar">
+          <span class="g-mover">${mover(`${clave}.filas`, i)}</span>
+        </div>`).join('')}</div>
+      <button type="button" class="btn small ghost" data-gar="agregar-fila" data-arr="${clave}.filas">${boton}</button>
+    </div>`;
+  const listaTextos = (clave, boton, cls) => `
+    <div class="card ${cls}">
+      ${cabecera(clave, false)}
+      ${p[clave].items.map((x, i) => `<div class="g-fila g-texto"><textarea rows="2" data-path="${clave}.items.${i}">${esc(x)}</textarea><span class="g-mover">${mover(`${clave}.items`, i)}</span></div>`).join('')}
+      <button type="button" class="btn small ghost" data-gar="agregar-texto" data-arr="${clave}.items">${boton}</button>
+    </div>`;
+
+  $('#cfg-garantias').innerHTML = `
+    <datalist id="lista-tiempos-gar">${TIEMPOS_GARANTIA.map((t) => `<option value="${t}">`).join('')}</datalist>
+    <div class="card cfg-barra">
+      <div>
+        <h2>Póliza de garantías</h2>
+        <p class="hint" style="margin:0">Es la página que abre el enlace «Haz clic aquí para verificar nuestra póliza de garantías» de los presupuestos. Toca el cuadro del logo para agregar la imagen de cada marca.</p>
+      </div>
+      <div class="cfg-acciones">
+        <a class="btn small ghost" href="${esc(urlGarantias())}" target="_blank" rel="noopener">Ver póliza publicada</a>
+        <button type="button" class="btn small ghost" data-gar="restaurar">Restaurar original</button>
+        <button type="button" class="btn primary" data-gar="guardar">${gDirty ? 'Guardar •' : 'Guardar'}</button>
+      </div>
+    </div>
+    <div class="card"><label>Texto inicial <span class="opt">(aparece en la primera sección)</span><textarea rows="2" data-path="intro">${esc(p.intro)}</textarea></label></div>
+    ${tablaTiempos('marcas', 'Marca', '+ Agregar marca')}
+    ${tablaTiempos('electricas', 'Pieza', '+ Agregar pieza')}
+    <div class="card">
+      ${cabecera('manoObra', false)}
+      <label style="margin-top:8px">Texto<textarea rows="3" data-path="manoObra.texto">${esc(p.manoObra.texto)}</textarea></label>
+    </div>
+    <div class="card">
+      ${cabecera('condiciones')}
+      ${p.condiciones.filas.map((f, i) => `<div class="g-fila g-cond">
+        <input data-path="condiciones.filas.${i}.nombre" value="${esc(f.nombre)}" placeholder="Tipo de pieza">
+        <textarea rows="2" data-path="condiciones.filas.${i}.texto" placeholder="Condición">${esc(f.texto)}</textarea>
+        <span class="g-mover">${mover('condiciones.filas', i)}</span></div>`).join('')}
+      <button type="button" class="btn small ghost" data-gar="agregar-cond" data-arr="condiciones.filas">+ Agregar condición</button>
+    </div>
+    ${listaTextos('exclusiones', '+ Agregar caso', 'g-alerta')}
+    ${listaTextos('validar', '+ Agregar paso', '')}`;
+}
+
+// Ventana para elegir el logo: buscar en Google y pegar (Ctrl+V), arrastrar o elegir un archivo
+function elegirLogo(nombre, actual) {
+  return new Promise((resolver) => {
+    let foto = actual || '';
+    let listo = false;
+    const fin = (v) => { if (listo) return; listo = true; document.removeEventListener('paste', alPegar); resolver(v); };
+    abrirModal(`
+      <h3>Logo: ${esc(nombre || 'sin nombre')}</h3>
+      <div class="aceite-editor">
+        <div class="foto-box" id="logo-box">
+          <div id="logo-preview"></div>
+          <button type="button" class="btn small primary" id="logo-buscar" style="justify-content:center">🔍 Buscar en Google</button>
+          <label class="btn small ghost" style="justify-content:center">Elegir archivo<input id="logo-input" type="file" accept="image/*" hidden></label>
+          <button type="button" class="btn tiny ghost" id="logo-quitar">Quitar logo</button>
+        </div>
+        <p class="hint pasos-foto" style="flex:1"><strong>Para agregar el logo:</strong> 1) pulsa <em>Buscar en Google</em>, 2) en la imagen que te guste haz clic derecho → <em>Copiar imagen</em>, 3) vuelve aquí y pulsa <strong>Ctrl + V</strong>. También puedes arrastrar la imagen a esta ventana o elegir un archivo (en la tablet: mantén presionada la imagen → Descargar, y luego <em>Elegir archivo</em>).</p>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button type="button" class="btn ghost" id="logo-cancelar">Cancelar</button>
+        <button type="button" class="btn primary" id="logo-ok">Usar este logo</button>
+      </div>`);
+    const pintar = () => {
+      $('#logo-preview').innerHTML = foto ? `<img src="${esc(foto)}" alt="" style="object-fit:contain">` : '<div class="sin-foto">Sin logo</div>';
+      $('#logo-quitar').hidden = !foto;
+    };
+    pintar();
+    const usar = async (f) => {
+      if (!f || !f.type.startsWith('image/')) return false;
+      try { foto = await redimensionarImagen(f, 240); pintar(); } catch (err) { alert(err.message); }
+      return true;
+    };
+    const alPegar = async (e) => {
+      const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+      if (item) { e.preventDefault(); usar(item.getAsFile()); }
+    };
+    document.addEventListener('paste', alPegar);
+    $('#modal').addEventListener('close', () => fin(null), { once: true });
+    $('#logo-input').onchange = (e) => usar(e.target.files[0]);
+    $('#logo-buscar').onclick = () => window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(`${nombre} logo png`), '_blank', 'noopener');
+    $('#logo-quitar').onclick = () => { foto = ''; pintar(); };
+    const zona = $('#modal-body');
+    zona.ondragover = (e) => { e.preventDefault(); $('#logo-box').classList.add('soltar'); };
+    zona.ondragleave = () => $('#logo-box').classList.remove('soltar');
+    zona.ondrop = async (e) => { e.preventDefault(); $('#logo-box').classList.remove('soltar'); if (!(await usar(e.dataTransfer.files[0]))) alert('No se pudo usar esa imagen. Prueba con clic derecho → "Copiar imagen" y luego Ctrl + V.'); };
+    $('#logo-cancelar').onclick = () => { fin(null); cerrarModal(); };
+    $('#logo-ok').onclick = () => { fin(foto); cerrarModal(); };
+  });
+}
+
+async function guardarCfgGarantias() {
+  const limpio = limpiarPoliza(gEdit);
+  if (!limpio.marcas.filas.length && !limpio.electricas.filas.length) { alert('La póliza debe tener al menos una marca o una pieza con garantía.'); return; }
+  db.config.garantias = limpio;
+  gDirty = false;
+  await guardar();
+  gEdit = copiar(limpio);
+  pintarCfgGarantias();
+  toast('Póliza de garantías guardada');
+}
+
+function initCfgGarantias() {
+  const c = $('#cfg-garantias'); if (!c) return;
+  const alEscribir = (e) => { const path = e.target.dataset.path; if (!path || !gEdit) return; setP(path, e.target.value); marcarG(); };
+  c.addEventListener('input', alEscribir);
+  c.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-gar]'); if (!b || !gEdit) return;
+    const arr = b.dataset.arr ? getP(b.dataset.arr) : null;
+    const i = Number(b.dataset.i);
+    switch (b.dataset.gar) {
+      case 'guardar': await guardarCfgGarantias(); return;
+      case 'restaurar': {
+        if (!await confirmar('¿Volver a la póliza original? Se perderán los cambios y los logos agregados.', { si: 'Restaurar', peligro: true })) return;
+        gEdit = copiar(limpiarPoliza(POLIZA_INICIAL)); break;
+      }
+      case 'agregar-fila': arr.push({ nombre: '', tiempo: '1 año', logo: '' }); break;
+      case 'agregar-cond': arr.push({ nombre: '', texto: '' }); break;
+      case 'agregar-texto': arr.push(''); break;
+      case 'subir': if (i > 0) [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]; break;
+      case 'bajar': if (i < arr.length - 1) [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]]; break;
+      case 'quitar': arr.splice(i, 1); break;
+      case 'logo': {
+        const f = arr[i];
+        const nuevo = await elegirLogo(f.nombre, f.logo);
+        if (nuevo === null || nuevo === f.logo) return;
+        f.logo = nuevo; break;
+      }
+      default: return;
+    }
+    marcarG(); pintarCfgGarantias();
+    if (b.dataset.gar.startsWith('agregar')) $$('#cfg-garantias input[data-path], #cfg-garantias textarea[data-path]').filter((x) => !x.value).at(-1)?.focus();
+  });
+}
+
+initCfgGarantias();

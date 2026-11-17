@@ -191,6 +191,8 @@ function normalizarDatos(data) {
   // Configuración (puntos de revisión y técnicos)
   d.config = d.config && typeof d.config === 'object' ? d.config : {};
   if (d.config.revision) d.config.revision = limpiarEstructura(d.config.revision);
+  if (d.config.garantias && typeof limpiarPoliza === 'function') d.config.garantias = limpiarPoliza(d.config.garantias);
+  else delete d.config.garantias;
   if (Array.isArray(d.config.tecnicos)) d.config.tecnicos = d.config.tecnicos.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 50);
   else delete d.config.tecnicos;
   if (d.config.mensajes && typeof d.config.mensajes === 'object') {

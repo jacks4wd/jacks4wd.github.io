@@ -807,3 +807,24 @@ body.rol-taller .solo-admin { display: none !important; }
 .sticker-img { width: 46mm; height: 46mm; image-rendering: pixelated; display: block; margin: 3mm auto; }
 .sticker-txt { font-size: 9pt; font-weight: 700; }
 .sticker-placa { font-size: 11pt; letter-spacing: 1px; margin-top: 1mm; }
+
+/* ===== Configuración: póliza de garantías ===== */
+.g-filas { margin: 10px 0; }
+.g-fila { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.g-fila > input { flex: 1; min-width: 0; }
+.g-fila .g-tiempo { flex: 0 0 120px; }
+.g-fila textarea { flex: 1; }
+.g-cond { align-items: flex-start; }
+.g-cond > input { flex: 0 0 30%; }
+.g-mover { display: flex; gap: 4px; flex: none; }
+.g-logo { width: 72px; height: 48px; flex: none; border: 1px dashed var(--line); border-radius: 8px; background: #fff; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; font: inherit; color: var(--muted); }
+.g-logo img { max-width: 64px; max-height: 30px; object-fit: contain; }
+.g-logo span { font-weight: 800; font-size: .8rem; }
+.g-logo small { font-size: .65rem; }
+.g-alerta { border-left: 4px solid var(--bad); }
+@media (max-width: 600px) {
+  .g-fila { flex-wrap: wrap; }
+  .g-fila .g-tiempo { flex: 1 0 100px; }
+  .g-cond > input { flex: 1 0 100%; }
+}

@@ -83,6 +83,7 @@ const Nube = (() => {
       if (f.id === 'plantillasPres') cfg.plantillasPres = f.data?.lista;
       if (f.id === 'mensajes') cfg.mensajes = f.data;
       if (f.id === 'motivosCita') cfg.motivosCita = f.data?.lista;
+      if (f.id === 'garantias') cfg.garantias = f.data;
     });
     return cfg;
   }
@@ -93,6 +94,7 @@ const Nube = (() => {
     if (db.config?.plantillasPres) filas.push({ id: 'plantillasPres', data: { lista: db.config.plantillasPres } });
     if (db.config?.mensajes) filas.push({ id: 'mensajes', data: db.config.mensajes });
     if (db.config?.motivosCita) filas.push({ id: 'motivosCita', data: { lista: db.config.motivosCita } });
+    if (db.config?.garantias) filas.push({ id: 'garantias', data: db.config.garantias });
     return filas;
   }
   const filasDe = (tabla) => (tabla === 'config' ? configAFilas() : (db[tabla] || []).map((x) => ({ id: x.id, data: x })));
