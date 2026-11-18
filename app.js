@@ -1931,12 +1931,12 @@ function abrirEnlaceDoc(d, desde) {
 }
 
 // ===================== STICKERS QR (impresora térmica, papel 76 × 130 mm) =====================
-// Sticker VERTICAL de 52 × 74 mm (logo arriba, QR, texto y placa) impreso GIRADO 90° en el
-// papel: ocupa 74 × 52 mm a lo ancho de la etiqueta, 2 por hoja uno debajo del otro. Al
+// Sticker VERTICAL de 48 × 74 mm (logo arriba, QR, texto y placa) impreso GIRADO 90° en el
+// papel: ocupa 74 × 48 mm a lo ancho de la etiqueta, 2 por hoja uno debajo del otro. Al
 // despegarlo se gira y queda vertical (para el borde de la puerta). Se dibuja a la resolución
 // real de la impresora térmica (203 ppp = 8 puntos por mm) y en blanco y negro puro (sin grises).
 // Se puede imprimir directo (computadora con el driver) o descargar como imagen.
-const HOJA_STICKER = { ancho: 76, alto: 130, anchoSticker: 52, altoSticker: 74, porHoja: 2, ppp: 203 };
+const HOJA_STICKER = { ancho: 76, alto: 130, anchoSticker: 48, altoSticker: 74, porHoja: 2, ppp: 203 };
 const COLA_STICKERS_KEY = 'jacks4wd-cola-stickers';
 const AJUSTE_STICKERS_KEY = 'jacks4wd-ajuste-stickers'; // corrección de posición de cada equipo (mm)
 
@@ -1979,12 +1979,10 @@ function dibujarSticker(ctx, mm, ox, oy, v, logo) {
   const fuente = '"Segoe UI", Roboto, Arial, sans-serif';
   ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
 
-  // Borde redondeado
-  ctx.lineWidth = Math.max(2, 0.35 * mm);
-  const r = 3 * mm; const bx = ox + m; const by = oy + m; const bw = w - 2 * m; const bh = h - 2 * m;
-  ctx.beginPath();
-  ctx.moveTo(bx + r, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, r); ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
-  ctx.arcTo(bx, by + bh, bx, by, r); ctx.arcTo(bx, by, bx + bw, by, r); ctx.closePath(); ctx.stroke();
+  // Borde con esquinas rectas (más fácil de recortar)
+  const lb = Math.max(2, Math.round(0.35 * mm));
+  ctx.lineWidth = lb;
+  ctx.strokeRect(Math.round(ox + m) + lb / 2, Math.round(oy + m) + lb / 2, Math.round(w - 2 * m) - lb, Math.round(h - 2 * m) - lb);
 
   const cx = ox + m + pad; const cw = w - 2 * (m + pad); const centro = ox + w / 2;
   const top = oy + m + pad; const altoUtil = h - 2 * (m + pad);
@@ -2058,12 +2056,20 @@ async function lienzoHojaStickers(vids) {
     const oy = Math.round((i * hueco + (hueco - HOJA_STICKER.anchoSticker) / 2 + aj.y) * mm);
     ctx.save(); ctx.translate(ox, oy + pw); ctx.rotate(-Math.PI / 2); ctx.drawImage(p, 0, 0); ctx.restore();
   });
-  // Línea de corte entre los dos stickers
-  if (lista.length > 1) {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([1.5 * mm, 1.5 * mm]);
-    const yc = Math.round((hueco + aj.y) * mm);
-    ctx.beginPath(); ctx.moveTo(0, yc); ctx.lineTo(c.width, yc); ctx.stroke(); ctx.setLineDash([]);
-  }
+  // Guías de corte punteadas, a 1 mm por fuera del recuadro de cada sticker
+  // (horizontales a todo el ancho y verticales a todo el alto: todos los cortes quedan iguales)
+  const borde = 1.5; const sep = 1; // borde del recuadro dentro del sticker y separación de la guía (mm)
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([Math.round(1.2 * mm), Math.round(1.2 * mm)]);
+  const linea = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+  const x0 = (HOJA_STICKER.ancho - HOJA_STICKER.altoSticker) / 2 + aj.x;
+  const xi = Math.round((x0 + borde - sep) * mm) + 0.5; const xd = Math.round((x0 + HOJA_STICKER.altoSticker - borde + sep) * mm) - 0.5;
+  if (lista.length) { linea(xi, 0, xi, c.height); linea(xd, 0, xd, c.height); }
+  lista.forEach((vid, i) => {
+    const y0 = i * hueco + (hueco - HOJA_STICKER.anchoSticker) / 2 + aj.y;
+    const ya = Math.round((y0 + borde - sep) * mm) + 0.5; const yb = Math.round((y0 + HOJA_STICKER.anchoSticker - borde + sep) * mm) - 0.5;
+    linea(0, ya, c.width, ya); linea(0, yb, c.width, yb);
+  });
+  ctx.setLineDash([]);
   blancoYNegro(ctx, c.width, c.height);
   return c;
 }
@@ -2102,7 +2108,7 @@ function bloqueStickersHTML(v) {
   const aj = ajusteStickers();
   const fmt = (n) => (n > 0 ? '+' : '') + n.toFixed(1).replace('.', ',');
   return `<div class="sticker-opciones">
-    <strong>Sticker para el vehículo</strong> <small class="hint">(5,2 × 7,4 cm, se imprime girado: despégalo y gíralo · papel de 7,6 × 13 cm, hasta 2 por hoja)</small>
+    <strong>Sticker para el vehículo</strong> <small class="hint">(4,8 × 7,4 cm, se imprime girado: despégalo y gíralo · papel de 7,6 × 13 cm, hasta 2 por hoja)</small>
     <div class="enlace-botones">
       <button type="button" class="btn small primary" data-enl="st-imprimir">Imprimir solo este</button>
       ${enCola ? '<button type="button" class="btn small ghost" data-enl="st-quitar">Quitar de la cola</button>'

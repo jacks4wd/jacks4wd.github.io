@@ -46,9 +46,47 @@
   .ev { position:relative; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:12px; }
   .ev::before { content:""; position:absolute; left:-20px; top:18px; width:12px; height:12px; border-radius:50%; background:var(--muted); border:2px solid var(--bg); }
   .ev.aceite::before { background:var(--primary); } .ev.rep::before { background:var(--blue); } .ev.rev::before { background:var(--ok); }
-  .ev .cab { display:flex; justify-content:space-between; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  /* Elementos compactos que se abren al tocarlos */
+  .ev { padding:0; }
+  .ev .cab { display:flex; width:100%; justify-content:space-between; gap:10px; align-items:center; background:transparent; border:0; font:inherit; color:inherit; text-align:left; padding:12px 14px; cursor:pointer; }
+  .ev .cab-txt { display:flex; flex-direction:column; min-width:0; }
+  .ev .cab-der { display:flex; align-items:center; gap:8px; flex:none; }
+  .ev .resumen { color:var(--muted); font-size:.85rem; }
+  .ev .chev { color:var(--muted); transition:transform .2s; }
+  .ev.abierto .chev { transform:rotate(180deg); }
+  .ev .det { padding:0 14px 14px; border-top:1px solid var(--line); padding-top:10px; }
   .ev .tipo { font-weight:700; }
   .ev .fecha { color:var(--muted); font-size:.85rem; }
+  /* Detalle de revisiones */
+  .rv-conteo { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+  .tag.urg { background:var(--bad-bg); color:var(--bad); } .tag.reg { background:var(--warn-bg); color:var(--warn); }
+  .rv-grupo { margin-top:10px; }
+  .rv-gt { font-weight:700; font-size:.9rem; padding:4px 10px; border-radius:8px; }
+  .rv-gt.urg { background:var(--bad-bg); color:var(--bad); } .rv-gt.reg { background:var(--warn-bg); color:var(--warn); } .rv-gt.ok { background:var(--ok-bg); color:var(--ok); }
+  .rv-obs { margin-top:10px; font-size:.95rem; }
+  .btn.pdf { margin-top:12px; cursor:pointer; }
+  /* Hoja imprimible (PDF de la revisión) */
+  #imprimir { display:none; }
+  @media print {
+    @page { size: letter; margin: 12mm; }
+    body { background:#fff; }
+    #app { display:none !important; }
+    #imprimir { display:block; color:#000; font:12px/1.4 Arial, sans-serif; }
+    #imprimir * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .pdf-cab { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #000; padding-bottom:8px; }
+    .pdf-cab img { height:42px; } .pdf-cab div { text-align:right; font-size:11px; }
+    #imprimir h1 { font-size:16px; text-align:center; margin:12px 0; letter-spacing:1px; }
+    .pdf-datos { width:100%; border:1px solid #000; border-collapse:collapse; margin-bottom:10px; }
+    .pdf-datos td { padding:5px 8px; border:1px solid #000; }
+    .pdf-conteo { display:flex; gap:10px; margin:8px 0 12px; }
+    .pdf-conteo span, .est { padding:2px 8px; border-radius:10px; font-weight:600; }
+    .pdf-conteo .urg, .est.urg { background:#fee2e2; color:#b91c1c; } .pdf-conteo .reg, .est.reg { background:#fef9c3; color:#a16207; } .pdf-conteo .ok, .est.ok { background:#dcfce7; color:#15803d; }
+    .pdf-puntos { width:100%; border-collapse:collapse; }
+    .pdf-puntos th, .pdf-puntos td { border:1px solid #999; padding:5px 7px; text-align:left; vertical-align:top; }
+    .pdf-puntos th { background:#eee; } .pdf-puntos tr.sec td { background:#222; color:#fff; font-weight:700; }
+    .pdf-puntos tr { page-break-inside:avoid; }
+    .pdf-obs { margin-top:12px; }
+  }
   .ev ul { margin:6px 0 0; padding-left:18px; } .ev li { margin:2px 0; }
   .tag { display:inline-block; border-radius:999px; padding:1px 9px; font-size:.78rem; font-weight:600; }
   .tag.ok { background:var(--ok-bg); color:var(--ok); } .tag.proc { background:var(--warn-bg); color:var(--warn); }
@@ -61,6 +99,7 @@
 </head>
 <body>
 <div class="wrap" id="app"><div class="estado">Cargando historial…</div></div>
+<div id="imprimir"></div>
 
 <script src="nube-config.js?v=1af767f1bf"></script>
 <script src="aceites-fotos.js?v=0db4da2da7"></script>
@@ -94,6 +133,116 @@
     .then((d) => (d && d.vehiculo ? pintar(d) : mensaje('Este enlace ya no está activo. Pide al taller tu enlace personal actualizado.')))
     .catch(() => mensaje('No se pudo cargar el historial. Revisa tu conexión e intenta de nuevo.'));
 
+  // ---------- Revisiones: puntos evaluados (misma lógica que la app, con la estructura guardada en cada revisión) ----------
+  const ESTADOS = {
+    reemplazo: { n: 'Reemplazo inmediato', titulo: 'Reemplazo inmediato', cls: 'urg' },
+    regular: { n: 'Estado regular', titulo: 'Estado regular (revisar pronto)', cls: 'reg' },
+    bueno: { n: 'Buen estado', titulo: 'En buen estado', cls: 'ok' },
+  };
+  const VIDA = { reemplazo: '-20%', regular: '45%', bueno: '+50%' };
+  const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
+  const lista = (x) => (Array.isArray(x) ? x : []);
+  function defDe(item, e) {
+    const d = { k: item.k, n: item.n };
+    if (item.tipo === 'vida') d.vida = true;
+    if (item.tipo === 'medida') d.medida = item.medida || 'Valor medido';
+    if (item.tipo === 'traseras') d.traseras = { k: item.kTras || item.k + '_tras', n: item.nTras || item.n + ' (traseras)' };
+    if (item.tipo === 'fugas') { d.fugas = true; d.fluidos = lista(item.sub).map((s) => [s.k, s.n]); }
+    if (item.tipo === 'fluidos') d.selector = lista(item.sub).map((s) => ({ k: s.k, n: s.n, fluido: true }));
+    if (item.tipo === 'botones') { const j = lista(e.botones).find((x) => x && x.id === item.juego); if (j && lista(j.op).length) d.opciones = j.op; }
+    return d;
+  }
+  function puntosRev(x) {
+    const e = obj(x.estructura); const op = obj(x.opciones); const tras = obj(op.traseras); const flu = lista(op.fluidos);
+    const secs = [...lista(e.basica), ...(x.tipo === 'completa' ? lista(e.completa) : [])];
+    const out = [];
+    secs.forEach((s) => lista(obj(s).items).forEach((it) => {
+      const d = defDe(obj(it), e);
+      if (d.selector) { d.selector.forEach((sub) => { if (flu.includes(sub.k)) out.push({ ...sub, seccion: s.t }); }); return; }
+      out.push({ ...d, seccion: s.t });
+      if (d.traseras && tras[d.k]) out.push({ ...d.traseras, seccion: s.t });
+    }));
+    return out;
+  }
+  function grupoDe(p, it) {
+    if (!it) return '';
+    if (p.fugas) { if (['si', 'reemplazo', 'regular'].includes(it.e)) return 'reemplazo'; if (['no', 'bueno'].includes(it.e)) return 'bueno'; return ''; }
+    if (p.fluido) { if (!it.nivel && !it.estadoF) return ''; if (it.estadoF === 'reemplazar') return 'reemplazo'; if (it.nivel === 'falta') return 'regular'; return 'bueno'; }
+    return it.e || '';
+  }
+  function textoFluido(it) {
+    const t = [it.nivel ? (it.nivel === 'falta' ? 'falta nivel' : 'nivel óptimo') : '', it.estadoF ? (it.estadoF === 'reemplazar' ? 'requiere reemplazo' : 'estado óptimo') : ''].filter(Boolean).join(', ');
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  function etiquetaPunto(p, it) {
+    const g = grupoDe(p, it);
+    if (p.opciones && it.op) return it.op;
+    if (p.fugas) return g === 'reemplazo' ? 'Fuga detectada' : 'Sin fugas';
+    if (p.fluido) return textoFluido(it);
+    if (p.vida && VIDA[g]) return `${ESTADOS[g].n} (vida útil ${VIDA[g]})`;
+    return ESTADOS[g]?.n || '';
+  }
+  function detallePunto(p, it) {
+    const partes = [];
+    if (it.medida) partes.push(it.medida + (/\d$/.test(it.medida) && /psi/i.test(p.medida || '') ? ' psi' : ''));
+    if (p.fugas && grupoDe(p, it) === 'reemplazo') {
+      const f = obj(it.fugas);
+      const t = lista(p.fluidos).filter(([k]) => k in f).map(([k, n]) => (f[k] ? `${n} (${f[k]})` : n)).join(', ');
+      if (t) partes.push(t);
+    }
+    if (it.nota) partes.push(it.nota);
+    return partes.join(' · ');
+  }
+  // Puntos evaluados (sin los N/A), con su grupo
+  function evaluados(x) {
+    const items = obj(x.items);
+    return puntosRev(x).map((p) => ({ p, it: obj(items[p.k]) })).map((o) => ({ ...o, g: grupoDe(o.p, o.it) })).filter((o) => ESTADOS[o.g]);
+  }
+  function conteoRev(x) { const c = { reemplazo: 0, regular: 0, bueno: 0 }; evaluados(x).forEach((o) => c[o.g]++); return c; }
+  function detalleRevHTML(x, i) {
+    const ev = evaluados(x); const c = conteoRev(x);
+    if (!ev.length) return `<div class="muted">${km(x.km) ? `Kilometraje: ${km(x.km)}` : 'Sin puntos registrados.'}</div>`;
+    return `
+      ${km(x.km) || x.tecnico ? `<div class="muted">${[km(x.km) ? `Kilometraje: ${km(x.km)}` : '', x.tecnico ? `Técnico: ${esc(x.tecnico)}` : ''].filter(Boolean).join(' · ')}</div>` : ''}
+      <div class="rv-conteo">${Object.keys(ESTADOS).map((g) => `<span class="tag ${ESTADOS[g].cls}">${ESTADOS[g].n}: ${c[g]}</span>`).join('')}</div>
+      ${Object.keys(ESTADOS).filter((g) => c[g]).map((g) => `
+        <div class="rv-grupo"><div class="rv-gt ${ESTADOS[g].cls}">${ESTADOS[g].titulo}</div>
+          <ul>${ev.filter((o) => o.g === g).map((o) => { const det = detallePunto(o.p, o.it); const et = etiquetaPunto(o.p, o.it);
+            return `<li><b>${esc(o.p.n)}</b>${et && et !== ESTADOS[g].n ? ` — ${esc(et)}` : ''}${det ? `<br><span class="muted">${esc(det)}</span>` : ''}</li>`; }).join('')}</ul>
+        </div>`).join('')}
+      ${x.observaciones ? `<div class="rv-obs"><b>Observaciones:</b> ${esc(x.observaciones)}</div>` : ''}
+      <button type="button" class="btn pdf" data-pdf="${i}">⬇ Descargar PDF</button>`;
+  }
+  // PDF: se arma una hoja imprimible y se abre la ventana de impresión (Guardar como PDF)
+  function imprimirRevision(x, v, cliente) {
+    if (!x) return;
+    const ev = evaluados(x); const c = conteoRev(x);
+    const secciones = [...new Set(ev.map((o) => o.p.seccion))];
+    const hoja = document.getElementById('imprimir');
+    hoja.innerHTML = `
+      <div class="pdf-cab"><img src="img/logo.png" alt=""><div><b>${TALLER.nombre}</b><br>${TALLER.direccion}<br>Telf: ${TALLER.telefono}</div></div>
+      <h1>${x.tipo === 'completa' ? 'REVISIÓN COMPLETA' : 'REVISIÓN BÁSICA'} ${num(x.numero)}</h1>
+      <table class="pdf-datos">
+        <tr><td>Cliente: <b>${esc(cliente || '')}</b></td><td>Fecha: <b>${fecha(x.fecha)}</b></td></tr>
+        <tr><td>Vehículo: <b>${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''} · ${esc(v.placa || '')}</b></td><td>${km(x.km) ? `Kilometraje: <b>${km(x.km)}</b>` : ''}</td></tr>
+        ${x.tecnico ? `<tr><td colspan="2">Técnico: <b>${esc(x.tecnico)}</b></td></tr>` : ''}
+      </table>
+      <div class="pdf-conteo">${Object.keys(ESTADOS).map((g) => `<span class="${ESTADOS[g].cls}">${ESTADOS[g].n}: <b>${c[g]}</b></span>`).join('')}</div>
+      <table class="pdf-puntos">
+        <tr><th>Punto revisado</th><th>Estado</th><th>Detalle</th></tr>
+        ${secciones.map((s) => `<tr class="sec"><td colspan="3">${esc(s)}</td></tr>` + ev.filter((o) => o.p.seccion === s).map((o) =>
+          `<tr><td>${esc(o.p.n)}</td><td><span class="est ${ESTADOS[o.g].cls}">${esc(etiquetaPunto(o.p, o.it))}</span></td><td>${esc(detallePunto(o.p, o.it))}</td></tr>`).join('')).join('')}
+      </table>
+      ${x.observaciones ? `<p class="pdf-obs"><b>Observaciones:</b> ${esc(x.observaciones)}</p>` : ''}`;
+    const titulo = document.title;
+    document.title = `Revision ${num(x.numero).slice(1)} - ${v.placa || ''}`;
+    const fin = () => { document.title = titulo; window.removeEventListener('afterprint', fin); };
+    window.addEventListener('afterprint', fin);
+    const img = hoja.querySelector('img');
+    const imprimir = () => setTimeout(() => window.print(), 80);
+    if (img && !img.complete) img.onload = img.onerror = imprimir; else imprimir();
+  }
+
   // Flota: todos los vehículos del mismo cliente (el del enlace viene primero)
   let datos = null; let flota = []; let actual = 0;
   function pintar(d, idx = 0) {
@@ -110,22 +259,25 @@
     const reps = Array.isArray(vd.reparaciones) ? vd.reparaciones : [];
     const revs = Array.isArray(vd.revisiones) ? vd.revisiones : [];
     const ult = serv.find((s) => FECHA.test(s.fecha || ''));
+    // Cada elemento: título, fecha y un resumen de una línea; el detalle se abre al tocarlo
     const eventos = [
-      ...serv.map((s) => ({ f: s.fecha, cls: 'aceite', grupo: 'aceite', html: `
-        <div class="cab"><span class="tipo">Cambio de aceite</span><span class="fecha">${fecha(s.fecha)}</span></div>
-        <div class="cuerpo">${fotoAceite(s) ? `<img class="mini" src="${esc(fotoAceite(s))}" alt="">` : ''}<div>
-        <div>${km(s.km) ? `Kilometraje: <b>${km(s.km)}</b>` : ''}${km(s.proximoKm) ? ` · Próximo: <b>${km(s.proximoKm)}</b>` : ''}</div>
-        ${s.aceite ? `<div class="muted">Aceite: ${esc(s.aceite)}</div>` : ''}
-        ${s.filtro ? `<div class="muted">Filtro: ${esc(s.filtro)}</div>` : ''}
-        ${s.revisiones ? `<div class="muted">Revisado: ${esc(s.revisiones)}</div>` : ''}
+      ...serv.map((s) => ({ f: s.fecha, cls: 'aceite', grupo: 'aceite',
+        titulo: 'Cambio de aceite', resumen: km(s.km),
+        det: `<div class="cuerpo">${fotoAceite(s) ? `<img class="mini" src="${esc(fotoAceite(s))}" alt="">` : ''}<div>
+          <div>${km(s.km) ? `Kilometraje: <b>${km(s.km)}</b>` : ''}${km(s.proximoKm) ? ` · Próximo: <b>${km(s.proximoKm)}</b>` : ''}</div>
+          ${s.aceite ? `<div class="muted">Aceite: ${esc(s.aceite)}</div>` : ''}
+          ${s.filtro ? `<div class="muted">Filtro: ${esc(s.filtro)}</div>` : ''}
+          ${s.revisiones ? `<div class="muted">Revisado: ${esc(s.revisiones)}</div>` : ''}
         </div></div>` })),
-      ...reps.map((r) => ({ f: r.fechaCierre || r.fecha, cls: 'rep', grupo: 'rep', html: `
-        <div class="cab"><span class="tipo">${r.tipo === 'modificacion' ? 'Modificación' : 'Reparación'} ${num(r.numero)}</span><span class="fecha">${fecha(r.fechaCierre || r.fecha)}</span></div>
-        <div>${r.estado === 'culminado' ? '<span class="tag ok">Entregado</span>' : '<span class="tag proc">En proceso</span>'}${r.notaEntrega ? ` <span class="muted">· Nota de entrega ${esc(r.notaEntrega)}</span>` : ''}</div>
-        ${(r.items || []).length ? `<ul>${r.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}` })),
-      ...revs.map((x) => ({ f: x.fecha, cls: 'rev', grupo: 'rev', html: `
-        <div class="cab"><span class="tipo">${x.tipo === 'completa' ? 'Revisión completa' : 'Revisión básica'} ${num(x.numero)}</span><span class="fecha">${fecha(x.fecha)}</span></div>
-        ${km(x.km) ? `<div class="muted">Kilometraje: ${km(x.km)}</div>` : ''}` })),
+      ...reps.map((r) => ({ f: r.fechaCierre || r.fecha, cls: 'rep', grupo: 'rep',
+        titulo: `${r.tipo === 'modificacion' ? 'Modificación' : 'Reparación'} ${num(r.numero)}`,
+        resumen: `${r.estado === 'culminado' ? 'Entregado' : 'En proceso'}${(r.items || []).length ? ` · ${r.items.length} trabajo(s)` : ''}`,
+        det: `<div>${r.estado === 'culminado' ? '<span class="tag ok">Entregado</span>' : '<span class="tag proc">En proceso</span>'}${r.notaEntrega ? ` <span class="muted">· Nota de entrega ${esc(r.notaEntrega)}</span>` : ''}</div>
+          ${(r.items || []).length ? `<ul>${r.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}` })),
+      ...revs.map((x, i) => { const c = conteoRev(x); return { f: x.fecha, cls: 'rev', grupo: 'rev',
+        titulo: `${x.tipo === 'completa' ? 'Revisión completa' : 'Revisión básica'} ${num(x.numero)}`,
+        resumen: [km(x.km), c.reemplazo ? `${c.reemplazo} para reemplazo` : '', c.regular ? `${c.regular} regular(es)` : ''].filter(Boolean).join(' · '),
+        det: detalleRevHTML(x, i) }; }),
     ].filter((e) => FECHA.test(e.f || '')).sort((a, b) => b.f.localeCompare(a.f));
 
     app.innerHTML = `
@@ -154,13 +306,27 @@
         <button data-f="rep">Reparaciones (${reps.length})</button>
         <button data-f="rev">Revisiones (${revs.length})</button>
       </div>
-      <div class="linea" id="linea">${eventos.map((e) => `<div class="ev ${e.cls}" data-g="${e.grupo}">${e.html}</div>`).join('') || '<div class="card estado">Aún no hay servicios registrados.</div>'}</div>
+      <div class="linea" id="linea">${eventos.map((e) => `<div class="ev ${e.cls}" data-g="${e.grupo}">
+          <button type="button" class="cab" aria-expanded="false">
+            <span class="cab-txt"><span class="tipo">${esc(e.titulo)}</span><span class="resumen">${fecha(e.f)}${e.resumen ? ' · ' + esc(e.resumen) : ''}</span></span>
+            <span class="cab-der"><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+          </button>
+          <div class="det" hidden>${e.det}</div>
+        </div>`).join('') || '<div class="card estado">Aún no hay servicios registrados.</div>'}</div>
       ${pie()}`;
     if (varios) {
       const btn = document.getElementById('sel-veh'); const menu = document.getElementById('menu-flota');
       btn.onclick = () => { menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); btn.classList.toggle('abierto', !menu.hidden); };
       menu.onclick = (e) => { const o = e.target.closest('[data-veh]'); if (!o) return; pintar(datos, Number(o.dataset.veh)); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     }
+    // Abrir / cerrar cada elemento y descargar el PDF de una revisión
+    document.getElementById('linea').onclick = (e) => {
+      const pdf = e.target.closest('[data-pdf]');
+      if (pdf) { imprimirRevision(revs[Number(pdf.dataset.pdf)], v, d.cliente); return; }
+      const cab = e.target.closest('.cab'); if (!cab) return;
+      const ev = cab.closest('.ev'); const det = ev.querySelector('.det');
+      det.hidden = !det.hidden; ev.classList.toggle('abierto', !det.hidden); cab.setAttribute('aria-expanded', String(!det.hidden));
+    };
     app.querySelector('.filtros').onclick = (e) => {
       const b = e.target.closest('[data-f]'); if (!b) return;
       app.querySelectorAll('.filtros button').forEach((x) => x.classList.toggle('on', x === b));
