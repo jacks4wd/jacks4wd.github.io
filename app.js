@@ -1902,7 +1902,7 @@ async function abrirEnlaceCliente(vid, desde = null) {
         return;
       }
       default:
-        if (b.dataset.enl.startsWith('st-')) await accionSticker(b.dataset.enl, g);
+        if (b.dataset.enl.startsWith('st-')) await accionSticker(b.dataset.enl, g, b);
     }
   });
   if (v.token) {
@@ -1931,17 +1931,24 @@ function abrirEnlaceDoc(d, desde) {
 }
 
 // ===================== STICKERS QR (impresora térmica, papel 76 × 130 mm) =====================
-// La hoja (una etiqueta de 76 × 130 mm) lleva 1 o 2 stickers de 76 × 52 mm con el QR ya puesto.
-// Se dibuja en un lienzo: se puede imprimir directo (computadora con el driver de la impresora)
-// o descargar como imagen para imprimirla desde la app de la impresora (tablet o teléfono).
-const HOJA_STICKER = { ancho: 76, alto: 130, altoSticker: 52, porHoja: 2 };
+// Stickers VERTICALES de 36 × 90 mm (para el borde de la puerta), 2 por hoja lado a lado,
+// con el QR ya puesto. Se dibujan a la resolución real de la impresora térmica (203 ppp = 8
+// puntos por mm) y en blanco y negro puro (sin grises), para que el texto salga nítido.
+// Se pueden imprimir directo (computadora con el driver) o descargar como imagen.
+const HOJA_STICKER = { ancho: 76, alto: 130, anchoSticker: 36, altoSticker: 90, porHoja: 2, ppp: 203 };
 const COLA_STICKERS_KEY = 'jacks4wd-cola-stickers';
+const AJUSTE_STICKERS_KEY = 'jacks4wd-ajuste-stickers'; // corrección de posición de cada equipo (mm)
 
 function colaStickers() {
   try { const c = JSON.parse(localStorage.getItem(COLA_STICKERS_KEY) || '[]'); return Array.isArray(c) ? c.filter((id) => vehiculo(id)?.token).slice(0, HOJA_STICKER.porHoja) : []; }
   catch { return []; }
 }
 function guardarColaStickers(c) { try { localStorage.setItem(COLA_STICKERS_KEY, JSON.stringify(c)); } catch { /* sin almacenamiento */ } }
+function ajusteStickers() {
+  try { const a = JSON.parse(localStorage.getItem(AJUSTE_STICKERS_KEY) || '{}'); return { x: Number(a.x) || 0, y: Number(a.y) || 0 }; }
+  catch { return { x: 0, y: 0 }; }
+}
+function guardarAjusteStickers(a) { try { localStorage.setItem(AJUSTE_STICKERS_KEY, JSON.stringify(a)); } catch { /* sin almacenamiento */ } }
 
 let logoSticker = null;
 function cargarLogoSticker() {
@@ -1966,74 +1973,95 @@ function lineasTexto(ctx, texto, ancho) {
 }
 
 function dibujarSticker(ctx, mm, ox, oy, v, logo) {
-  const w = HOJA_STICKER.ancho * mm; const h = HOJA_STICKER.altoSticker * mm;
-  const m = 2.5 * mm; const pad = 3 * mm;
+  const w = HOJA_STICKER.anchoSticker * mm; const h = HOJA_STICKER.altoSticker * mm;
+  const m = 1.5 * mm; const pad = 2.2 * mm;
   const fuente = '"Segoe UI", Roboto, Arial, sans-serif';
   ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
 
   // Borde redondeado
-  ctx.lineWidth = 0.35 * mm;
-  const r = 3.5 * mm; const bx = ox + m; const by = oy + m; const bw = w - 2 * m; const bh = h - 2 * m;
+  ctx.lineWidth = Math.max(2, 0.35 * mm);
+  const r = 3 * mm; const bx = ox + m; const by = oy + m; const bw = w - 2 * m; const bh = h - 2 * m;
   ctx.beginPath();
   ctx.moveTo(bx + r, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, r); ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
   ctx.arcTo(bx, by + bh, bx, by, r); ctx.arcTo(bx, by, bx + bw, by, r); ctx.closePath(); ctx.stroke();
 
-  // QR (módulos dibujados en píxeles enteros para que salga nítido en la térmica)
-  const s = 37 * mm;
-  const qx = ox + m + pad; const qy = oy + (h - s) / 2;
-  const q = crearQR(urlHistorial(v)); const n = q.getModuleCount();
-  const celda = Math.floor(s / (n + 2)); const lado = celda * n;
-  const x0 = Math.round(qx + (s - lado) / 2); const y0 = Math.round(qy + (s - lado) / 2);
-  for (let fila = 0; fila < n; fila++) for (let col = 0; col < n; col++) if (q.isDark(fila, col)) ctx.fillRect(x0 + col * celda, y0 + fila * celda, celda, celda);
+  const cx = ox + m + pad; const cw = w - 2 * (m + pad); const centro = ox + w / 2;
+  const top = oy + m + pad; const altoUtil = h - 2 * (m + pad);
+  const textoGracias = 'Gracias por tu confianza, escanea el QR con tu dispositivo y accede al historial de servicios y reparaciones.';
 
-  // Columna derecha: logo, título entre líneas, texto y placa (con ajuste automático de tamaño)
-  const cx = qx + s + pad; const cw = ox + w - m - pad - cx; const centro = cx + cw / 2;
-  for (let k = 1; k >= 0.7; k -= 0.05) {
+  // Tamaños (se reducen un poco solo si no cabe todo)
+  for (let k = 1; k >= 0.8; k -= 0.04) {
     const lw = cw * 0.86; const lh = lw * logo.height / logo.width;
-    const tTit = 2.5 * mm * k; const tTxt = 1.9 * mm * k; const tPla = 2.4 * mm * k;
-    ctx.font = `600 ${tTit}px ${fuente}`; const lTit = lineasTexto(ctx, `Identificador de veh${'í'}culo`, cw - 1 * mm);
-    ctx.font = `${tTxt}px ${fuente}`; const lTxt = lineasTexto(ctx, 'Gracias por tu confianza, escanea el QR con tu dispositivo y accede al historial de servicios y reparaciones.', cw);
-    const alto = lh + 1.4 * mm + lTit.length * tTit * 1.2 + 1.4 * mm + 1.2 * mm + lTxt.length * tTxt * 1.3 + 1.2 * mm + tPla * 1.2;
-    if (alto > s && k > 0.71) continue;
-    let y = qy + Math.max(0, (s - alto) / 2);
-    ctx.drawImage(logo, centro - lw / 2, y, lw, lh); y += lh + 1.4 * mm;
-    ctx.lineWidth = 0.25 * mm;
-    ctx.beginPath(); ctx.moveTo(cx + 0.5 * mm, y); ctx.lineTo(cx + cw - 0.5 * mm, y); ctx.stroke();
+    const tTit = 2.6 * mm * k; const tTxt = 2.35 * mm * k; const tPla = 3 * mm * k;
+    const s = Math.min(cw, 28 * mm);
+    ctx.font = `700 ${tTit}px ${fuente}`; const lTit = lineasTexto(ctx, `Identificador de veh${'í'}culo`, cw);
+    ctx.font = `700 ${tTxt}px ${fuente}`; const lTxt = lineasTexto(ctx, textoGracias, cw);
+    const g = 1.6 * mm;
+    const alto = lh + g + lTit.length * tTit * 1.2 + 1.2 * mm + g + s + g + lTxt.length * tTxt * 1.25 + g * 0.8 + tPla * 1.2;
+    if (alto > altoUtil && k > 0.81) continue;
+    let y = top + Math.max(0, (altoUtil - alto) / 2);
+    ctx.drawImage(logo, centro - lw / 2, y, lw, lh); y += lh + g;
+    ctx.lineWidth = Math.max(2, 0.3 * mm);
+    ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx + cw, y); ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `600 ${tTit}px ${fuente}`;
-    y += 0.7 * mm;
+    ctx.font = `700 ${tTit}px ${fuente}`;
+    y += 0.6 * mm;
     lTit.forEach((l) => { y += tTit * 0.6; ctx.fillText(l, centro, y); y += tTit * 0.6; });
-    y += 0.7 * mm;
-    ctx.beginPath(); ctx.moveTo(cx + 0.5 * mm, y); ctx.lineTo(cx + cw - 0.5 * mm, y); ctx.stroke();
-    y += 1.2 * mm;
-    ctx.font = `${tTxt}px ${fuente}`;
-    lTxt.forEach((l) => { y += tTxt * 0.65; ctx.fillText(l, centro, y); y += tTxt * 0.65; });
-    y += 1.2 * mm;
-    ctx.font = `700 ${tPla}px ${fuente}`;
+    y += 0.6 * mm;
+    ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx + cw, y); ctx.stroke();
+    y += g;
+    // QR (módulos en puntos enteros de la impresora para que salga nítido)
+    const q = crearQR(urlHistorial(v)); const n = q.getModuleCount();
+    const celda = Math.floor(s / n); const lado = celda * n;
+    const x0 = Math.round(centro - lado / 2); const y0 = Math.round(y + (s - lado) / 2);
+    for (let fila = 0; fila < n; fila++) for (let col = 0; col < n; col++) if (q.isDark(fila, col)) ctx.fillRect(x0 + col * celda, y0 + fila * celda, celda, celda);
+    y += s + g;
+    ctx.font = `700 ${tTxt}px ${fuente}`;
+    lTxt.forEach((l) => { y += tTxt * 0.625; ctx.fillText(l, centro, y); y += tTxt * 0.625; });
+    y += g * 0.8;
+    ctx.font = `800 ${tPla}px ${fuente}`;
     y += tPla * 0.6; ctx.fillText(v.placa || '', centro, y);
     break;
   }
 }
 
-// Hoja de 76 × 130 mm con los stickers de los vehículos indicados (1 o 2), arriba hacia abajo
-async function lienzoHojaStickers(vids, ppp = 300) {
+// Convierte el dibujo a blanco y negro puro (la térmica imprime grises como puntos claros)
+function blancoYNegro(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h); const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    const a = d[i + 3] / 255;
+    const negro = lum * a + 255 * (1 - a) < 175;
+    d[i] = d[i + 1] = d[i + 2] = negro ? 0 : 255; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// Hoja de 76 × 130 mm con 1 o 2 stickers verticales, lado a lado (izquierda primero)
+async function lienzoHojaStickers(vids) {
   await cargarQR();
   const logo = await cargarLogoSticker();
-  const mm = ppp / 25.4;
+  const mm = HOJA_STICKER.ppp / 25.4;
   const c = document.createElement('canvas');
   c.width = Math.round(HOJA_STICKER.ancho * mm); c.height = Math.round(HOJA_STICKER.alto * mm);
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  const hueco = HOJA_STICKER.alto / HOJA_STICKER.porHoja; // 65 mm por sticker
-  vids.slice(0, HOJA_STICKER.porHoja).forEach((vid, i) => {
+  const aj = ajusteStickers();
+  const hueco = HOJA_STICKER.ancho / HOJA_STICKER.porHoja; // 38 mm por sticker
+  const lista = vids.slice(0, HOJA_STICKER.porHoja);
+  lista.forEach((vid, i) => {
     const v = vehiculo(vid); if (!v?.token) return;
-    dibujarSticker(ctx, mm, 0, (i * hueco + (hueco - HOJA_STICKER.altoSticker) / 2) * mm, v, logo);
+    const ox = (i * hueco + (hueco - HOJA_STICKER.anchoSticker) / 2 + aj.x) * mm;
+    const oy = (2 + aj.y) * mm;
+    dibujarSticker(ctx, mm, ox, oy, v, logo);
   });
   // Línea de corte entre los dos stickers
-  if (vids.length > 1) {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 0.2 * mm; ctx.setLineDash([1.5 * mm, 1.5 * mm]);
-    ctx.beginPath(); ctx.moveTo(0, hueco * mm); ctx.lineTo(c.width, hueco * mm); ctx.stroke(); ctx.setLineDash([]);
+  if (lista.length > 1) {
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([1.5 * mm, 1.5 * mm]);
+    const xc = (hueco + aj.x) * mm;
+    ctx.beginPath(); ctx.moveTo(xc, (2 + aj.y) * mm); ctx.lineTo(xc, (2 + aj.y + HOJA_STICKER.altoSticker) * mm); ctx.stroke(); ctx.setLineDash([]);
   }
+  blancoYNegro(ctx, c.width, c.height);
   return c;
 }
 
@@ -2068,8 +2096,10 @@ async function descargarHojaStickers(vids) {
 function bloqueStickersHTML(v) {
   const cola = colaStickers();
   const enCola = cola.includes(v.id);
+  const aj = ajusteStickers();
+  const fmt = (n) => (n > 0 ? '+' : '') + n.toFixed(1).replace('.', ',');
   return `<div class="sticker-opciones">
-    <strong>Sticker para el vehículo</strong> <small class="hint">(papel de 7.6 × 13 cm, hasta 2 por hoja)</small>
+    <strong>Sticker para el vehículo</strong> <small class="hint">(vertical 3,6 × 9 cm · papel de 7,6 × 13 cm, hasta 2 por hoja)</small>
     <div class="enlace-botones">
       <button type="button" class="btn small primary" data-enl="st-imprimir">Imprimir solo este</button>
       ${enCola ? '<button type="button" class="btn small ghost" data-enl="st-quitar">Quitar de la cola</button>'
@@ -2084,11 +2114,23 @@ function bloqueStickersHTML(v) {
         <button type="button" class="btn tiny ghost" data-enl="st-vaciar">Vaciar</button>
       </span>
     </div>` : ''}
+    <div class="ajuste-sticker">
+      <span>Ajuste de posición <small class="hint">(si sale corrido; se guarda en este equipo)</small></span>
+      <span>Horizontal:
+        <button type="button" class="btn tiny ghost" data-enl="st-aj-x" data-d="-0.5" title="Mover a la izquierda">◀</button>
+        <b>${fmt(aj.x)} mm</b>
+        <button type="button" class="btn tiny ghost" data-enl="st-aj-x" data-d="0.5" title="Mover a la derecha">▶</button></span>
+      <span>Vertical:
+        <button type="button" class="btn tiny ghost" data-enl="st-aj-y" data-d="-0.5" title="Mover hacia arriba">▲</button>
+        <b>${fmt(aj.y)} mm</b>
+        <button type="button" class="btn tiny ghost" data-enl="st-aj-y" data-d="0.5" title="Mover hacia abajo">▼</button></span>
+      ${aj.x || aj.y ? '<button type="button" class="btn tiny ghost" data-enl="st-aj-0">Restablecer</button>' : ''}
+    </div>
     <p class="hint" style="margin:6px 0 0">En la computadora se imprime directo (elige la impresora térmica, tamaño 76 × 130 mm y márgenes "Ninguno"). En tablet o teléfono usa <em>Descargar imagen</em> e imprímela desde la app de la impresora.</p>
   </div>`;
 }
 
-async function accionSticker(accion, v) {
+async function accionSticker(accion, v, boton) {
   let cola = colaStickers();
   try {
     switch (accion) {
@@ -2106,6 +2148,13 @@ async function accionSticker(accion, v) {
         if (await confirmar('¿Los stickers se imprimieron bien? Si es así, se vacía la cola.', { titulo: 'Cola de stickers', si: 'Sí, vaciar la cola', no: 'No, mantenerla' })) guardarColaStickers([]);
         break;
       case 'st-descargar-cola': await descargarHojaStickers(cola); break;
+      case 'st-aj-x':
+      case 'st-aj-y': {
+        const aj = ajusteStickers(); const eje = accion === 'st-aj-x' ? 'x' : 'y';
+        aj[eje] = Math.max(-10, Math.min(10, Math.round((aj[eje] + Number(boton?.dataset.d || 0)) * 10) / 10));
+        guardarAjusteStickers(aj); break;
+      }
+      case 'st-aj-0': guardarAjusteStickers({ x: 0, y: 0 }); break;
       default: return;
     }
   } catch (err) { avisar(err.message || 'No se pudo preparar el sticker.'); return; }

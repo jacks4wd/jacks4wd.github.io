@@ -843,3 +843,5 @@ body.rol-taller .solo-admin { display: none !important; }
 .sticker-opciones { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .cola-stickers { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 8px; padding: 8px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; font-size: .9rem; }
 @media print { #print-area .hoja-stickers { display: block; width: 75.7mm; height: 129.5mm; margin: 0; page-break-after: avoid; } }
+.ajuste-sticker { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: .88rem; }
+.ajuste-sticker b { display: inline-block; min-width: 56px; text-align: center; }
