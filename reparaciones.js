@@ -235,6 +235,7 @@ function pintarEditorRep() {
       ${repNueva || cerrada ? '' : '<button class="btn danger" data-rep="borrar">Eliminar</button>'}
       ${!repNueva && cerrada && !soloLectura() && vigente(r) ? '<button class="btn ghost" data-rep="corregir" title="Crear una nueva versión con el mismo número">✎ Corregir (nueva versión)</button>' : ''}
       ${repNueva ? '' : '<button class="btn ghost" data-rep="pdf">⬇ PDF</button>'}
+      ${!repNueva && !soloLectura() && vigente(r) ? `<button class="btn wa" data-rep="informar-equipo" title="Enviar al grupo del equipo los trabajos aprobados">${equipoInformadoRep(r) ? '✓ Equipo informado' : 'Informar al equipo'}</button>` : ''}
       ${!repNueva && !soloLectura() ? '<button class="btn ghost" data-rep="enlace" title="Enlace personal para que el cliente vea el historial de su vehículo">Enlace / QR</button>' : ''}
       <button class="btn primary" data-rep="guardar">Guardar</button>
     </div>
@@ -580,6 +581,10 @@ function initReparaciones() {
         repDirty = true; pintarEditorRep(); break;
       }
       case 'enlace': abrirEnlaceDoc(repEdit, 'reparaciones'); break;
+      case 'informar-equipo':
+        if (repDirty && !(await guardarReparacion(true))) break;
+        await informarEquipoRep(repEdit);
+        break;
       case 'editar-datos':
         if (repDirty && !(await guardarReparacion(true))) break;
         editarDatosRep(repEdit.id);
@@ -611,6 +616,38 @@ function initReparaciones() {
   renderReparaciones();
 }
 
+
+// ===================== INFORMAR AL EQUIPO =====================
+// Igual que en el presupuesto aprobado: envía al grupo del equipo (WhatsApp) el vehículo,
+// el técnico y SOLO los trabajos aprobados. Usa el mismo mensaje editable de Configuración.
+// Queda registrado en "mensajes" (así funciona también con reparaciones cerradas).
+const equipoInformadoRep = (r) => (db.mensajes || []).filter((m) => m.tipo === 'equipo-reparacion' && m.reparacionId === r.id).map((m) => m.fecha).sort().at(-1) || null;
+
+function mensajeEquipoRep(r) {
+  const v = r.vehiculoId && vehiculo(r.vehiculoId);
+  const [modeloTxt, placaTxt] = (r.vehiculo || '').split(' · ');
+  const aprobados = (r.items || []).filter((it) => it.estado === 'aprobado' && it.desc);
+  return rellenarMensaje('aprobacionEquipo', {
+    vehiculo: v ? `${v.marca} ${v.modelo}${v.anio ? ' ' + v.anio : ''}` : (modeloTxt || 'Vehículo'),
+    placa: v?.placa || placaTxt || '',
+    tecnico: r.tecnico || 'por asignar',
+    items: aprobados.map((it) => `-${it.desc}`).join('\n'),
+    numero: numRepV(r),
+  }).replace(/ · \n/, '\n');
+}
+
+async function informarEquipoRep(r) {
+  if (!(r.items || []).some((it) => it.estado === 'aprobado' && it.desc)) { avisar('Esta reparación no tiene trabajos aprobados para informar.'); return; }
+  const previo = equipoInformadoRep(r);
+  if (previo && !await confirmar(`El equipo ya fue informado de esta reparación el ${fmtFecha(previo)}. ¿Enviar el aviso otra vez?`, { si: 'Enviar otra vez' })) return;
+  // El grupo no se puede abrir directo desde un enlace: se elige el grupo en WhatsApp
+  abrirWhatsApp(null, mensajeEquipoRep(r));
+  db.mensajes = db.mensajes || [];
+  db.mensajes.push({ id: uid(), vehiculoId: r.vehiculoId || null, reparacionId: r.id, telefono: '', tipo: 'equipo-reparacion', texto: `Aviso al equipo · ${tipoRep(r).toLowerCase()} ${numRepV(r)}`, fecha: hoyISO(), creado: new Date().toISOString() });
+  await guardar(false);
+  if (repEdit && repEdit.id === r.id) pintarEditorRep();
+  toast('Elige el grupo del equipo en WhatsApp y envía');
+}
 
 // ===================== DATOS DEL CLIENTE / VEHÍCULO (también en reparaciones cerradas) =====================
 // Los ítems, el estado y el técnico de una reparación cerrada no cambian nunca; los datos del

@@ -842,3 +842,4 @@ body.rol-taller .solo-admin { display: none !important; }
 .cli-veh-pie { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
 .cli-unir { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .cli-unir summary { cursor: pointer; font-weight: 600; }
+.cli-cab-acc { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
