@@ -1,6 +1,6 @@
 /* Jacks4WD – Registro de clientes, cambios de aceite, recordatorios y citas.
  * Funciona sin instalar nada: se abre index.html en Chrome o Edge.
- * Los datos se guardan en datos/taller.json (carpeta conectada) y,
+ * Los datos se guardan en la nube (Supabase); en modo local, en la carpeta conectada y,
  * como respaldo, en el almacenamiento del navegador.
  */
 

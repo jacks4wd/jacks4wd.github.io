@@ -1,5 +1,5 @@
 /* Jacks4WD – Presupuestos
- * Se llenan línea por línea, se totalizan con IVA, se guardan en datos/taller.json,
+ * Se llenan línea por línea, se totalizan con IVA, se guardan con el resto de los datos,
  * se exportan a PDF con la identidad visual de la nota de entrega y se envían por WhatsApp.
  * Usa las utilidades globales de app.js ($, esc, db, guardar, toast, etc.).
  */

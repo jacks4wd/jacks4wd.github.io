@@ -399,7 +399,7 @@ const Nube = (() => {
         </label>
         <button class="btn ghost" data-act="cerrar">Empezar sin datos</button>
       </div>
-      <p class="hint">El archivo está en la carpeta <strong>jacks4wd/datos/taller.json</strong>.</p>`);
+      <p class="hint">Usa una copia descargada con <strong>Exportar copia</strong> (o un archivo taller.json antiguo).</p>`);
     const subir = async (datos) => {
       db = normalizarDatos(datos);
       cerrarModal();
