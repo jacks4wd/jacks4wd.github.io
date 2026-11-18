@@ -18,6 +18,17 @@
   .hola { font-size:.95rem; opacity:.85; margin-top:14px; }
   .veh { font-size:1.6rem; font-weight:800; letter-spacing:-.01em; line-height:1.15; }
   .placa { display:inline-block; margin-top:8px; background:#fff; color:#111; font-weight:800; letter-spacing:2px; border-radius:6px; padding:2px 10px; }
+  /* Selector de vehículos (flotas) */
+  .selector { display:flex; width:100%; align-items:center; justify-content:space-between; gap:12px; background:transparent; border:0; color:#fff; font:inherit; text-align:left; padding:0; cursor:pointer; }
+  .selector .veh { display:block; }
+  .selector .flecha { flex:none; width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; font-size:1.1rem; transition:transform .2s; }
+  .selector.abierto .flecha { transform:rotate(180deg); background:var(--primary); border-color:var(--primary); }
+  .menu-flota { margin-top:14px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:12px; overflow:hidden; }
+  .menu-flota .menu-tit { font-size:.8rem; opacity:.7; padding:8px 12px; }
+  .menu-flota .op { display:flex; width:100%; justify-content:space-between; gap:10px; background:transparent; border:0; border-top:1px solid rgba(255,255,255,.1); color:#fff; font:inherit; padding:10px 12px; cursor:pointer; text-align:left; }
+  .menu-flota .op b { letter-spacing:1px; }
+  .menu-flota .op.on { background:rgba(194,65,12,.35); }
+  .menu-flota .op:hover { background:rgba(255,255,255,.1); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; margin-top:14px; }
   .card h2 { margin:0 0 6px; font-size:1.05rem; }
   .prox { display:flex; gap:14px; align-items:center; }
@@ -83,11 +94,21 @@
     .then((d) => (d && d.vehiculo ? pintar(d) : mensaje('Este enlace ya no está activo. Pide al taller tu enlace personal actualizado.')))
     .catch(() => mensaje('No se pudo cargar el historial. Revisa tu conexión e intenta de nuevo.'));
 
-  function pintar(d) {
-    const v = d.vehiculo || {};
-    const serv = Array.isArray(d.servicios) ? d.servicios : [];
-    const reps = Array.isArray(d.reparaciones) ? d.reparaciones : [];
-    const revs = Array.isArray(d.revisiones) ? d.revisiones : [];
+  // Flota: todos los vehículos del mismo cliente (el del enlace viene primero)
+  let datos = null; let flota = []; let actual = 0;
+  function pintar(d, idx = 0) {
+    if (d !== datos) {
+      datos = d;
+      flota = (Array.isArray(d.flota) ? d.flota : []).filter((x) => x && typeof x === 'object' && x.vehiculo);
+      if (!flota.length) flota = [d];
+    }
+    actual = Math.min(Math.max(0, idx), flota.length - 1);
+    const vd = flota[actual];
+    const v = vd.vehiculo || {};
+    const varios = flota.length > 1;
+    const serv = Array.isArray(vd.servicios) ? vd.servicios : [];
+    const reps = Array.isArray(vd.reparaciones) ? vd.reparaciones : [];
+    const revs = Array.isArray(vd.revisiones) ? vd.revisiones : [];
     const ult = serv.find((s) => FECHA.test(s.fecha || ''));
     const eventos = [
       ...serv.map((s) => ({ f: s.fecha, cls: 'aceite', grupo: 'aceite', html: `
@@ -110,9 +131,18 @@
     app.innerHTML = `
       <header>
         <div class="top"><strong>${TALLER.nombre}</strong><img src="img/logo.png" alt=""></div>
-        <div class="hola">${d.cliente ? `Hola, ${esc(d.cliente)}. Este es el historial de tu vehículo` : 'Historial del vehículo'}</div>
-        <div class="veh">${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''}</div>
-        ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : ''}
+        <div class="hola">${d.cliente ? `Hola, ${esc(d.cliente)}. Este es el historial de ${varios ? 'tus vehículos' : 'tu vehículo'}` : 'Historial del vehículo'}</div>
+        ${varios ? `<button type="button" class="selector" id="sel-veh" aria-expanded="false" aria-haspopup="listbox">
+          <span><span class="veh">${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''}</span>
+          ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : ''}</span>
+          <span class="flecha" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+        </button>
+        <div class="menu-flota" id="menu-flota" role="listbox" hidden>
+          <div class="menu-tit">${flota.length} vehículos registrados a tu nombre</div>
+          ${flota.map((x, i) => { const w = x.vehiculo || {}; return `<button type="button" role="option" class="op ${i === actual ? 'on' : ''}" data-veh="${i}" aria-selected="${i === actual}">
+            <span>${esc(w.marca)} ${esc(w.modelo)}${w.anio ? ' ' + esc(w.anio) : ''}</span><b>${esc(w.placa || '')}</b></button>`; }).join('')}
+        </div>` : `<div class="veh">${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''}</div>
+        ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : ''}`}
       </header>
       ${ult ? `<div class="card"><div class="prox">${fotoAceite(ult) ? `<img class="envase" src="${esc(fotoAceite(ult))}" alt="Aceite usado">` : '<div class="ic">🛢️</div>'}<div>
         <div class="muted">Próximo cambio de aceite</div>
@@ -126,6 +156,11 @@
       </div>
       <div class="linea" id="linea">${eventos.map((e) => `<div class="ev ${e.cls}" data-g="${e.grupo}">${e.html}</div>`).join('') || '<div class="card estado">Aún no hay servicios registrados.</div>'}</div>
       ${pie()}`;
+    if (varios) {
+      const btn = document.getElementById('sel-veh'); const menu = document.getElementById('menu-flota');
+      btn.onclick = () => { menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); btn.classList.toggle('abierto', !menu.hidden); };
+      menu.onclick = (e) => { const o = e.target.closest('[data-veh]'); if (!o) return; pintar(datos, Number(o.dataset.veh)); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    }
     app.querySelector('.filtros').onclick = (e) => {
       const b = e.target.closest('[data-f]'); if (!b) return;
       app.querySelectorAll('.filtros button').forEach((x) => x.classList.toggle('on', x === b));

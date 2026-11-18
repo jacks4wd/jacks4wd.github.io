@@ -1647,6 +1647,7 @@ function renderTodo() {
   if (typeof renderRevisiones === 'function') renderRevisiones(); // definido en revisiones.js
   if (typeof renderReparaciones === 'function') renderReparaciones(); // definido en reparaciones.js
   if (typeof renderIngresos === 'function') renderIngresos(); // definido en ingresos.js
+  if (typeof renderClientes === 'function') renderClientes(); // definido en clientes.js
   aceiteNuevo.refrescar();
 }
 
@@ -1661,6 +1662,7 @@ function init() {
   $$('.tab').forEach((b) => (b.onclick = () => {
     irA(b.dataset.tab);
     if (b.dataset.tab === 'inicio') renderInicio();
+    if (b.dataset.tab === 'clientes' && typeof renderClientes === 'function') renderClientes();
     if (b.dataset.tab === 'servicios' && !svDirty) { limpiarFormulario(); irSubtabSv('historial'); }
     if (b.dataset.tab === 'revisiones' && typeof reiniciarVistaRevisiones === 'function') reiniciarVistaRevisiones();
     if (b.dataset.tab === 'presupuestos' && typeof reiniciarVistaPresupuestos === 'function') reiniciarVistaPresupuestos();
