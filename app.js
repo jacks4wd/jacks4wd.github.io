@@ -271,7 +271,7 @@ function normalizarDatos(data) {
     if (!r.reemplazaA) { r.version = 1; delete r.motivoCorreccion; delete r.corregidoPor; delete r.fechaCorreccion; }
     else { r.motivoCorreccion = String(r.motivoCorreccion || '').slice(0, 500); r.corregidoPor = String(r.corregidoPor || '').slice(0, 100); r.fechaCorreccion = fecha(r.fechaCorreccion); }
   });
-  d.presupuestos.forEach((p) => { p.ingresoId = id(p.ingresoId); });
+  d.presupuestos.forEach((p) => { p.ingresoId = id(p.ingresoId); if (p.noRegistrar !== true) delete p.noRegistrar; if (p.sinGarantia !== true) delete p.sinGarantia; });
   d.ingresos.forEach((x) => {
     x.vehiculoId = id(x.vehiculoId); x.presupuestoId = id(x.presupuestoId); x.reparacionId = id(x.reparacionId);
     x.fecha = fecha(x.fecha) || hoyISO();
@@ -620,7 +620,7 @@ function camposVehiculoHTML(d = {}) {
 }
 // Campos de "cliente nuevo" ocultos tras el botón "+ Crear nuevo cliente".
 // Si ya tienen datos escritos (p. ej. al repintar) se muestran abiertos.
-function camposClienteNuevoHTML(n = {}, idGrid = '') {
+function camposClienteNuevoHTML(n = {}, idGrid = '', extra = '') {
   const abierto = Object.values(n || {}).some((x) => String(x || '').trim());
   const campo = (k, etq, extra = '') => `<label>${etq}<input data-nuevo="${k}" value="${esc(n[k] || '')}" ${extra}></label>`;
   return `<div class="crear-cliente-box">
@@ -636,6 +636,7 @@ function camposClienteNuevoHTML(n = {}, idGrid = '') {
         ${campo('anio', 'Año <span class="opt">(opcional)</span>', 'inputmode="numeric" maxlength="4"')}
         ${campo('color', 'Color <span class="opt">(opcional)</span>')}
       </div>
+      ${extra}
     </div>
   </div>`;
 }

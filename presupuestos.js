@@ -220,6 +220,32 @@ function vehiculoRegistradoHTML() {
   </div>`;
 }
 
+// "+ Crear nuevo cliente": solo si el presupuesto no tiene un cliente registrado.
+// Es opcional: también se puede hacer un presupuesto libre, incluso sin nombre.
+function presCrearClienteHTML(n = {}) {
+  if (!presEdit || presOtroDe || (presEdit.vehiculoId && vehiculo(presEdit.vehiculoId))) return '';
+  return camposClienteNuevoHTML(n, 'pres-nuevo-cliente', `
+    <div class="actions" style="justify-content:flex-start;margin-top:8px">
+      <button type="button" class="btn small primary" data-pact="registrar-cliente">Registrar cliente y usarlo en el presupuesto</button>
+    </div>`);
+}
+function refrescarClientePres(n) {
+  $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+  $('#pres-crear').innerHTML = presCrearClienteHTML(n);
+}
+// Separa el texto libre del vehículo ("Toyota Prado 2015 · AB123CD") en marca, modelo, año y placa
+function adivinarVehiculo(txt) {
+  const partes = String(txt || '').split(/\s*[·,|]\s*/).filter(Boolean);
+  let placa = '';
+  const iPlaca = partes.findIndex((p) => /^[A-Za-z0-9-]{5,9}$/.test(p.replace(/\s/g, '')) && /\d/.test(p) && /[A-Za-z]/.test(p));
+  if (iPlaca >= 0) placa = partes.splice(iPlaca, 1)[0].replace(/[\s-]/g, '').toUpperCase();
+  const palabras = partes.join(' ').split(/\s+/).filter(Boolean);
+  let anio = '';
+  const iAnio = palabras.findIndex((w) => /^(19|20)\d{2}$/.test(w));
+  if (iAnio >= 0) anio = palabras.splice(iAnio, 1)[0];
+  return { marca: palabras[0] || '', modelo: palabras.slice(1).join(' '), placa, anio };
+}
+
 function asignarVehiculo(vid) {
   const v = vehiculo(vid); if (!v) return;
   const c = cliente(v.clienteId);
@@ -269,6 +295,7 @@ function pintarEditor() {
       <input id="pres-buscar" type="search" placeholder="Opcional: buscar cliente registrado por nombre, teléfono o placa para llenar sus datos…" autocomplete="off">
       <div id="pres-res" class="picker-list"></div>
       <div id="pres-veh-registrado">${vehiculoRegistradoHTML()}</div>
+      <div id="pres-crear">${presCrearClienteHTML()}</div>
     </div>
 
     ${origenPresHTML()}
@@ -538,6 +565,23 @@ async function guardarPresupuesto(silencioso = false) {
   return true;
 }
 
+// Al guardar un presupuesto libre con nombre de cliente escrito a mano: ofrecer registrarlo.
+// Devuelve true para seguir guardando, false si se abrió el formulario de cliente nuevo.
+async function ofrecerRegistrarCliente() {
+  leerEditor();
+  const p = presEdit;
+  if (!p.cliente || p.noRegistrar || (p.vehiculoId && vehiculo(p.vehiculoId))) return true;
+  const si = await confirmar(`«${p.cliente}» no está registrado como cliente.\n¿Quieres agregarlo al registro de clientes?`, { titulo: 'Cliente nuevo', si: 'Sí, agregar cliente', no: 'Guardar sin agregarlo' });
+  if (!si) { p.noRegistrar = true; return true; } // no se vuelve a preguntar en este presupuesto
+  presOtroDe = null;
+  refrescarClientePres({ nombre: p.cliente, telefono: p.telefono, ...adivinarVehiculo(p.vehiculo) });
+  const box = $('#pres-crear');
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  [...box.querySelectorAll('[data-nuevo]')].find((i) => !i.value)?.focus();
+  toast('Completa los datos del cliente y pulsa «Registrar cliente». Luego guarda el presupuesto.');
+  return false;
+}
+
 async function confirmarSalida() {
   if (!presDirty) return true;
   return await confirmarSinGuardar();
@@ -736,24 +780,38 @@ function initPresupuestos() {
       const f = $('#form-pres');
       ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
       $('#pres-res').innerHTML = ''; $('#pres-buscar').value = '';
-      presOtroDe = null; $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+      presOtroDe = null; refrescarClientePres();
       return;
     }
     const b = e.target.closest('[data-pact]'); if (!b) return;
     if (b.dataset.pact === 'otro-veh') {
       presOtroDe = vehiculo(presEdit.vehiculoId)?.clienteId || null;
-      $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+      refrescarClientePres();
       $('#pres-otro-veh [data-veh="marca"]')?.focus();
       return;
     }
-    if (b.dataset.pact === 'otro-veh-cancelar') { presOtroDe = null; $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML(); return; }
+    if (b.dataset.pact === 'otro-veh-cancelar') { presOtroDe = null; refrescarClientePres(); return; }
+    if (b.dataset.pact === 'registrar-cliente') {
+      const d = {};
+      $$('#pres-nuevo-cliente [data-nuevo]').forEach((i) => (d[i.dataset.nuevo] = i.value.trim()));
+      if (['nombre', 'telefono', 'marca', 'modelo', 'placa'].some((k) => !d[k])) { alert('Para registrar al cliente completa nombre, teléfono, marca, modelo y placa.'); return; }
+      if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return; }
+      const vid = await obtenerVehiculoNuevo(d); if (!vid) return;
+      leerEditor(); asignarVehiculo(vid); presDirty = true; delete presEdit.noRegistrar;
+      const f = $('#form-pres');
+      ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
+      refrescarClientePres();
+      await guardar(false);
+      toast(`Cliente registrado: ${presEdit.cliente}`);
+      return;
+    }
     if (b.dataset.pact === 'otro-veh-guardar') {
       const vid = await crearVehiculoCliente(presOtroDe, leerCamposVehiculo($('#pres-otro-veh')));
       if (!vid) return;
       leerEditor(); asignarVehiculo(vid); presDirty = true; presOtroDe = null;
       const f = $('#form-pres');
       ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
-      $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
+      refrescarClientePres();
       toast('Vehículo agregado al cliente');
       return;
     }
@@ -795,6 +853,7 @@ function initPresupuestos() {
       }
       case 'guardar':
         // Al guardar se vuelve al listado; para aprobar/rechazar se abre desde ahí
+        if (!(await ofrecerRegistrarCliente())) break;
         if (await guardarPresupuesto()) volverALista();
         break;
       case 'pdf': if (await guardarPresupuesto(true)) exportarPDF(presEdit); break;
