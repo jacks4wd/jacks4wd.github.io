@@ -1931,11 +1931,12 @@ function abrirEnlaceDoc(d, desde) {
 }
 
 // ===================== STICKERS QR (impresora térmica, papel 76 × 130 mm) =====================
-// Stickers VERTICALES de 36 × 90 mm (para el borde de la puerta), 2 por hoja lado a lado,
-// con el QR ya puesto. Se dibujan a la resolución real de la impresora térmica (203 ppp = 8
-// puntos por mm) y en blanco y negro puro (sin grises), para que el texto salga nítido.
-// Se pueden imprimir directo (computadora con el driver) o descargar como imagen.
-const HOJA_STICKER = { ancho: 76, alto: 130, anchoSticker: 36, altoSticker: 90, porHoja: 2, ppp: 203 };
+// Sticker VERTICAL de 52 × 74 mm (logo arriba, QR, texto y placa) impreso GIRADO 90° en el
+// papel: ocupa 74 × 52 mm a lo ancho de la etiqueta, 2 por hoja uno debajo del otro. Al
+// despegarlo se gira y queda vertical (para el borde de la puerta). Se dibuja a la resolución
+// real de la impresora térmica (203 ppp = 8 puntos por mm) y en blanco y negro puro (sin grises).
+// Se puede imprimir directo (computadora con el driver) o descargar como imagen.
+const HOJA_STICKER = { ancho: 76, alto: 130, anchoSticker: 52, altoSticker: 74, porHoja: 2, ppp: 203 };
 const COLA_STICKERS_KEY = 'jacks4wd-cola-stickers';
 const AJUSTE_STICKERS_KEY = 'jacks4wd-ajuste-stickers'; // corrección de posición de cada equipo (mm)
 
@@ -1974,7 +1975,7 @@ function lineasTexto(ctx, texto, ancho) {
 
 function dibujarSticker(ctx, mm, ox, oy, v, logo) {
   const w = HOJA_STICKER.anchoSticker * mm; const h = HOJA_STICKER.altoSticker * mm;
-  const m = 1.5 * mm; const pad = 2.2 * mm;
+  const m = 1.5 * mm; const pad = 2.5 * mm;
   const fuente = '"Segoe UI", Roboto, Arial, sans-serif';
   ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
 
@@ -1991,9 +1992,9 @@ function dibujarSticker(ctx, mm, ox, oy, v, logo) {
 
   // Tamaños (se reducen un poco solo si no cabe todo)
   for (let k = 1; k >= 0.8; k -= 0.04) {
-    const lw = cw * 0.86; const lh = lw * logo.height / logo.width;
-    const tTit = 2.6 * mm * k; const tTxt = 2.35 * mm * k; const tPla = 3 * mm * k;
-    const s = Math.min(cw, 28 * mm);
+    const lw = cw * 0.6 * k; const lh = lw * logo.height / logo.width;
+    const tTit = 2.7 * mm * k; const tTxt = 2.4 * mm * k; const tPla = 3 * mm * k;
+    const s = Math.min(cw, 30 * mm * k);
     ctx.font = `700 ${tTit}px ${fuente}`; const lTit = lineasTexto(ctx, `Identificador de veh${'í'}culo`, cw);
     ctx.font = `700 ${tTxt}px ${fuente}`; const lTxt = lineasTexto(ctx, textoGracias, cw);
     const g = 1.6 * mm;
@@ -2037,7 +2038,8 @@ function blancoYNegro(ctx, w, h) {
   ctx.putImageData(img, 0, 0);
 }
 
-// Hoja de 76 × 130 mm con 1 o 2 stickers verticales, lado a lado (izquierda primero)
+// Hoja de 76 × 130 mm con 1 o 2 stickers, uno debajo del otro (arriba primero).
+// Cada sticker se dibuja vertical (52 × 74 mm) y se coloca girado 90° a lo ancho del papel.
 async function lienzoHojaStickers(vids) {
   await cargarQR();
   const logo = await cargarLogoSticker();
@@ -2047,19 +2049,25 @@ async function lienzoHojaStickers(vids) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   const aj = ajusteStickers();
-  const hueco = HOJA_STICKER.ancho / HOJA_STICKER.porHoja; // 38 mm por sticker
+  const hueco = HOJA_STICKER.alto / HOJA_STICKER.porHoja; // 65 mm por sticker
+  const pw = Math.round(HOJA_STICKER.anchoSticker * mm); const ph = Math.round(HOJA_STICKER.altoSticker * mm);
   const lista = vids.slice(0, HOJA_STICKER.porHoja);
   lista.forEach((vid, i) => {
     const v = vehiculo(vid); if (!v?.token) return;
-    const ox = (i * hueco + (hueco - HOJA_STICKER.anchoSticker) / 2 + aj.x) * mm;
-    const oy = (2 + aj.y) * mm;
-    dibujarSticker(ctx, mm, ox, oy, v, logo);
+    // Sticker vertical en su propio lienzo
+    const p = document.createElement('canvas'); p.width = pw; p.height = ph;
+    const pc = p.getContext('2d'); pc.fillStyle = '#fff'; pc.fillRect(0, 0, pw, ph);
+    dibujarSticker(pc, mm, 0, 0, v, logo);
+    // Girado 90° (la parte de arriba del sticker queda hacia el borde izquierdo del papel)
+    const ox = Math.round(((HOJA_STICKER.ancho - HOJA_STICKER.altoSticker) / 2 + aj.x) * mm);
+    const oy = Math.round((i * hueco + (hueco - HOJA_STICKER.anchoSticker) / 2 + aj.y) * mm);
+    ctx.save(); ctx.translate(ox, oy + pw); ctx.rotate(-Math.PI / 2); ctx.drawImage(p, 0, 0); ctx.restore();
   });
   // Línea de corte entre los dos stickers
   if (lista.length > 1) {
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.setLineDash([1.5 * mm, 1.5 * mm]);
-    const xc = (hueco + aj.x) * mm;
-    ctx.beginPath(); ctx.moveTo(xc, (2 + aj.y) * mm); ctx.lineTo(xc, (2 + aj.y + HOJA_STICKER.altoSticker) * mm); ctx.stroke(); ctx.setLineDash([]);
+    const yc = Math.round((hueco + aj.y) * mm);
+    ctx.beginPath(); ctx.moveTo(0, yc); ctx.lineTo(c.width, yc); ctx.stroke(); ctx.setLineDash([]);
   }
   blancoYNegro(ctx, c.width, c.height);
   return c;
@@ -2099,7 +2107,7 @@ function bloqueStickersHTML(v) {
   const aj = ajusteStickers();
   const fmt = (n) => (n > 0 ? '+' : '') + n.toFixed(1).replace('.', ',');
   return `<div class="sticker-opciones">
-    <strong>Sticker para el vehículo</strong> <small class="hint">(vertical 3,6 × 9 cm · papel de 7,6 × 13 cm, hasta 2 por hoja)</small>
+    <strong>Sticker para el vehículo</strong> <small class="hint">(5,2 × 7,4 cm, se imprime girado: despégalo y gíralo · papel de 7,6 × 13 cm, hasta 2 por hoja)</small>
     <div class="enlace-botones">
       <button type="button" class="btn small primary" data-enl="st-imprimir">Imprimir solo este</button>
       ${enCola ? '<button type="button" class="btn small ghost" data-enl="st-quitar">Quitar de la cola</button>'
