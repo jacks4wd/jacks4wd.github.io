@@ -1993,23 +1993,18 @@ function dibujarSticker(ctx, mm, ox, oy, v, logo) {
   // Tamaños (se reducen un poco solo si no cabe todo)
   for (let k = 1; k >= 0.8; k -= 0.04) {
     const lw = cw * 0.6 * k; const lh = lw * logo.height / logo.width;
-    const tTit = 2.7 * mm * k; const tTxt = 2.4 * mm * k; const tPla = 3 * mm * k;
+    // Sin título: logo, línea, QR, mensaje (más grande) y placa
+    const tTxt = 3.0 * mm * k; const tPla = 3.1 * mm * k;
     const s = Math.min(cw, 30 * mm * k);
-    ctx.font = `700 ${tTit}px ${fuente}`; const lTit = lineasTexto(ctx, `Identificador de veh${'í'}culo`, cw);
     ctx.font = `700 ${tTxt}px ${fuente}`; const lTxt = lineasTexto(ctx, textoGracias, cw);
-    const g = 1.6 * mm;
-    const alto = lh + g + lTit.length * tTit * 1.2 + 1.2 * mm + g + s + g + lTxt.length * tTxt * 1.25 + g * 0.8 + tPla * 1.2;
+    const g = 1.8 * mm;
+    const alto = lh + g + g + s + g + lTxt.length * tTxt * 1.22 + g * 0.8 + tPla * 1.2;
     if (alto > altoUtil && k > 0.81) continue;
     let y = top + Math.max(0, (altoUtil - alto) / 2);
     ctx.drawImage(logo, centro - lw / 2, y, lw, lh); y += lh + g;
     ctx.lineWidth = Math.max(2, 0.3 * mm);
     ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx + cw, y); ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `700 ${tTit}px ${fuente}`;
-    y += 0.6 * mm;
-    lTit.forEach((l) => { y += tTit * 0.6; ctx.fillText(l, centro, y); y += tTit * 0.6; });
-    y += 0.6 * mm;
-    ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx + cw, y); ctx.stroke();
     y += g;
     // QR (módulos en puntos enteros de la impresora para que salga nítido)
     const q = crearQR(urlHistorial(v)); const n = q.getModuleCount();
@@ -2018,7 +2013,7 @@ function dibujarSticker(ctx, mm, ox, oy, v, logo) {
     for (let fila = 0; fila < n; fila++) for (let col = 0; col < n; col++) if (q.isDark(fila, col)) ctx.fillRect(x0 + col * celda, y0 + fila * celda, celda, celda);
     y += s + g;
     ctx.font = `700 ${tTxt}px ${fuente}`;
-    lTxt.forEach((l) => { y += tTxt * 0.625; ctx.fillText(l, centro, y); y += tTxt * 0.625; });
+    lTxt.forEach((l) => { y += tTxt * 0.61; ctx.fillText(l, centro, y); y += tTxt * 0.61; });
     y += g * 0.8;
     ctx.font = `800 ${tPla}px ${fuente}`;
     y += tPla * 0.6; ctx.fillText(v.placa || '', centro, y);
