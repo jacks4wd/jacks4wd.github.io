@@ -12,7 +12,7 @@
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
   .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
-  header { background: linear-gradient(120deg,#1f2937 0%,#374151 60%,var(--primary) 150%); color:#fff; border-radius:16px; padding:20px; }
+  header { background: radial-gradient(120% 140% at 100% 0%, #262626 0%, #111 45%, #000 100%); color:#fff; border-radius:16px; padding:20px; border-bottom:4px solid var(--primary); box-shadow:0 6px 18px rgba(0,0,0,.25); }
   .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
   .top img { height:40px; filter:brightness(0) invert(1); }
   .hola { font-size:.95rem; opacity:.85; margin-top:14px; }
@@ -22,6 +22,9 @@
   .card h2 { margin:0 0 6px; font-size:1.05rem; }
   .prox { display:flex; gap:14px; align-items:center; }
   .prox .ic { width:46px; height:46px; border-radius:12px; background:var(--warn-bg); display:flex; align-items:center; justify-content:center; font-size:1.4rem; flex:none; }
+  .prox .envase { width:64px; height:80px; object-fit:contain; flex:none; background:#fff; border-radius:12px; border:1px solid var(--line); padding:4px; }
+  .ev .cuerpo { display:flex; gap:12px; align-items:flex-start; } .ev .cuerpo > div { flex:1; min-width:0; }
+  .ev .mini { width:44px; height:56px; object-fit:contain; flex:none; background:#fff; border:1px solid var(--line); border-radius:8px; padding:2px; }
   .prox b { font-size:1.15rem; }
   .muted { color:var(--muted); font-size:.9rem; }
   .filtros { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
@@ -49,6 +52,7 @@
 <div class="wrap" id="app"><div class="estado">Cargando historial…</div></div>
 
 <script src="nube-config.js"></script>
+<script src="aceites-fotos.js"></script>
 <script>
 (() => {
   const TALLER = { nombre: 'JACKS4WD', wa: '584142333535', direccion: 'C.C.C.T. Sótano 1', telefono: '0414-2333535' };
@@ -59,6 +63,10 @@
   const fecha = (iso) => { if (!FECHA.test(iso || '')) return ''; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' }); };
   const km = (n) => (Number.isFinite(Number(n)) && n !== null && n !== '' ? Number(n).toLocaleString('es-VE') + ' km' : '');
   const num = (n) => '#' + String(Number(n) || 0).padStart(4, '0');
+  // Foto del envase: la propia del catálogo (imagen incrustada) o la predeterminada de img/aceites
+  const FOTO = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+  const fotoAceite = (s) => (typeof s.aceiteFoto === 'string' && FOTO.test(s.aceiteFoto) ? s.aceiteFoto
+    : (typeof fotoPredeterminadaAceite === 'function' ? fotoPredeterminadaAceite(s.aceiteMarca, s.aceiteLinea, s.aceiteViscosidad) : ''));
   const sumarMeses = (iso, m) => { const [y, mo, d] = iso.split('-').map(Number); const f = new Date(y, mo - 1 + m, d); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`; };
   const mensaje = (t) => { app.innerHTML = `<header><div class="top"><strong>${TALLER.nombre}</strong><img src="img/logo.png" alt=""></div></header><div class="card estado">${t}</div>${pie()}`; };
   const pie = () => `<div class="acciones"><a class="btn wa" href="https://wa.me/${TALLER.wa}" target="_blank" rel="noopener">Escribir al taller por WhatsApp</a><a class="btn" href="garantias.html">Póliza de garantías</a></div>
@@ -84,10 +92,12 @@
     const eventos = [
       ...serv.map((s) => ({ f: s.fecha, cls: 'aceite', grupo: 'aceite', html: `
         <div class="cab"><span class="tipo">Cambio de aceite</span><span class="fecha">${fecha(s.fecha)}</span></div>
+        <div class="cuerpo">${fotoAceite(s) ? `<img class="mini" src="${esc(fotoAceite(s))}" alt="">` : ''}<div>
         <div>${km(s.km) ? `Kilometraje: <b>${km(s.km)}</b>` : ''}${km(s.proximoKm) ? ` · Próximo: <b>${km(s.proximoKm)}</b>` : ''}</div>
         ${s.aceite ? `<div class="muted">Aceite: ${esc(s.aceite)}</div>` : ''}
         ${s.filtro ? `<div class="muted">Filtro: ${esc(s.filtro)}</div>` : ''}
-        ${s.revisiones ? `<div class="muted">Revisado: ${esc(s.revisiones)}</div>` : ''}` })),
+        ${s.revisiones ? `<div class="muted">Revisado: ${esc(s.revisiones)}</div>` : ''}
+        </div></div>` })),
       ...reps.map((r) => ({ f: r.fechaCierre || r.fecha, cls: 'rep', grupo: 'rep', html: `
         <div class="cab"><span class="tipo">${r.tipo === 'modificacion' ? 'Modificación' : 'Reparación'} ${num(r.numero)}</span><span class="fecha">${fecha(r.fechaCierre || r.fecha)}</span></div>
         <div>${r.estado === 'culminado' ? '<span class="tag ok">Entregado</span>' : '<span class="tag proc">En proceso</span>'}${r.notaEntrega ? ` <span class="muted">· Nota de entrega ${esc(r.notaEntrega)}</span>` : ''}</div>
@@ -104,7 +114,7 @@
         <div class="veh">${esc(v.marca)} ${esc(v.modelo)}${v.anio ? ' ' + esc(v.anio) : ''}</div>
         ${v.placa ? `<span class="placa">${esc(v.placa)}</span>` : ''}
       </header>
-      ${ult ? `<div class="card"><div class="prox"><div class="ic">🛢️</div><div>
+      ${ult ? `<div class="card"><div class="prox">${fotoAceite(ult) ? `<img class="envase" src="${esc(fotoAceite(ult))}" alt="Aceite usado">` : '<div class="ic">🛢️</div>'}<div>
         <div class="muted">Próximo cambio de aceite</div>
         <b>${km(ult.proximoKm) || 'Según kilometraje'}</b> <span class="muted">o el ${fecha(sumarMeses(ult.fecha, MESES_ACEITE))}, lo que ocurra primero</span>
       </div></div></div>` : ''}
