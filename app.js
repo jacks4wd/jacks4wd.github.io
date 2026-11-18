@@ -250,6 +250,9 @@ function normalizarDatos(data) {
     r.fechaCierre = fecha(r.fechaCierre); r.cerradoPor = String(r.cerradoPor || '');
     r.items = lista(r.items).map((it) => ({ cant: num(it.cant) ?? 0, unidad: String(it.unidad || ''), desc: String(it.desc || ''), sku: String(it.sku || ''), estado: it.estado === 'aprobado' ? 'aprobado' : 'rechazado' }));
     r.ingresoId = id(r.ingresoId);
+    // Registro de cambios en los datos del cliente/vehículo (también en reparaciones cerradas)
+    r.cambiosDatos = lista(r.cambiosDatos).slice(0, 100).map((c) => ({ fecha: fecha(c.fecha) || hoyISO(), por: String(c.por || '').slice(0, 100), antes: { cliente: String(c.antes?.cliente || '').slice(0, 200), telefono: String(c.antes?.telefono || '').slice(0, 50), vehiculo: String(c.antes?.vehiculo || '').slice(0, 200), vehiculoId: id(c.antes?.vehiculoId) } }));
+    if (!r.cambiosDatos.length) delete r.cambiosDatos;
     // Correcciones (versiones con el mismo número)
     r.version = Math.max(1, Math.floor(num(r.version) || 1));
     r.reemplazaA = id(r.reemplazaA);

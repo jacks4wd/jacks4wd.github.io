@@ -828,3 +828,9 @@ body.rol-taller .solo-admin { display: none !important; }
   .g-fila .g-tiempo { flex: 1 0 100px; }
   .g-cond > input { flex: 1 0 100%; }
 }
+
+/* ===== Reparaciones: datos del cliente/vehículo ===== */
+.rep-datos-acc { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0 4px; }
+.rep-datos-acc .hint { margin: 0; color: var(--warn); }
+.rep-cambios { margin: 4px 0 8px; font-size: .85rem; color: var(--muted); }
+.rep-cambios ul { margin: 4px 0 0; padding-left: 18px; }

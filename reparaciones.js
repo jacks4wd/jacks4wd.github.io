@@ -279,6 +279,11 @@ function pintarEditorRep() {
           <div class="r">ESTADO: <strong>${ESTADOS_REP[r.estado]}</strong></div>
         </div>
       </div>
+      ${!repNueva && !soloLectura() && vigente(r) ? `<div class="rep-datos-acc">
+        <button type="button" class="btn small ghost" data-rep="editar-datos">✎ Editar datos del cliente / vehículo</button>
+        ${!(r.vehiculoId && vehiculo(r.vehiculoId)) ? '<span class="hint">Sin cliente registrado asociado: asígnalo para que aparezca en su historial y su QR.</span>' : ''}
+      </div>` : ''}
+      ${(r.cambiosDatos || []).length ? `<details class="rep-cambios"><summary>Cambios en los datos del cliente/vehículo (${r.cambiosDatos.length})</summary><ul>${r.cambiosDatos.map((c) => `<li>${fmtFecha(c.fecha)}${c.por ? ' · ' + esc(c.por) : ''}: antes «${esc(c.antes.cliente || '—')}» · ${esc(c.antes.telefono || '—')} · ${esc(c.antes.vehiculo || '—')}</li>`).join('')}</ul></details>` : ''}
       ${editarItems ? `
         <table class="doc-items rep-tabla rep-items-edit">
           <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>ESTADO</th><th></th></tr></thead>
@@ -575,6 +580,10 @@ function initReparaciones() {
         repDirty = true; pintarEditorRep(); break;
       }
       case 'enlace': abrirEnlaceDoc(repEdit, 'reparaciones'); break;
+      case 'editar-datos':
+        if (repDirty && !(await guardarReparacion(true))) break;
+        editarDatosRep(repEdit.id);
+        break;
       case 'pdf':
         if (repDirty) await guardarReparacion(true);
         imprimirDocumento(docRepHTML(repEdit), `Reparacion ${numRep(repEdit.numero).slice(1)}${repEdit.cliente ? ' - ' + repEdit.cliente : ''}`);
@@ -600,6 +609,70 @@ function initReparaciones() {
 
   window.addEventListener('beforeunload', (e) => { if (repDirty) { e.preventDefault(); e.returnValue = ''; } });
   renderReparaciones();
+}
+
+
+// ===================== DATOS DEL CLIENTE / VEHÍCULO (también en reparaciones cerradas) =====================
+// Los ítems, el estado y el técnico de una reparación cerrada no cambian nunca; los datos del
+// cliente y del vehículo sí (por si faltó la placa o el teléfono). Cada cambio queda registrado.
+function editarDatosRep(id) {
+  const r = (db.reparaciones || []).find((x) => x.id === id); if (!r) return;
+  const sel = { vehiculoId: r.vehiculoId && vehiculo(r.vehiculoId) ? r.vehiculoId : null };
+  const asociadoHTML = () => {
+    const v = sel.vehiculoId && vehiculo(sel.vehiculoId);
+    if (!v) return '<span class="hint">Sin cliente registrado asociado.</span>';
+    const c = cliente(v.clienteId);
+    return `<div class="seleccion rv-sel-cliente"><div>Asociado a: <strong>${esc(c?.nombre || '')}</strong> · ${esc(v.marca)} ${esc(v.modelo)} · <strong>${esc(v.placa)}</strong></div>
+      <button type="button" class="btn tiny ghost" id="dr-quitar">Quitar asociación</button></div>`;
+  };
+  abrirModal(`
+    <h3>Datos del cliente y del vehículo</h3>
+    <p class="hint">${tipoRep(r)} ${numRepV(r)}. ${esCerrada(r) ? 'Está cerrada: los ítems, el estado y el técnico no cambian; ' : ''}aquí solo se corrigen los datos del cliente/vehículo. El cambio queda registrado.</p>
+    <label>Asociar a un cliente registrado <span class="opt">(recomendado: así aparece en su historial y en su QR)</span>
+      <input id="dr-buscar" type="search" placeholder="Buscar por nombre, teléfono o placa…" autocomplete="off"></label>
+    <div id="dr-res" class="picker-list"></div>
+    <div id="dr-asociado" style="margin:8px 0">${asociadoHTML()}</div>
+    <div class="grid">
+      <label>Cliente<input id="dr-cliente" value="${esc(r.cliente)}"></label>
+      <label>Teléfono<input id="dr-telefono" value="${esc(r.telefono)}" inputmode="tel"></label>
+      <label class="full">Vehículo (marca, modelo y placa)<input id="dr-vehiculo" value="${esc(r.vehiculo)}" placeholder="Ej: Toyota Hilux 2018 · AB123CD"></label>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button type="button" class="btn ghost" data-act="cerrar">Cancelar</button>
+      <button type="button" class="btn primary" id="dr-guardar">Guardar datos</button>
+    </div>`);
+  const pintarAsociado = () => {
+    $('#dr-asociado').innerHTML = asociadoHTML();
+    const q = $('#dr-quitar'); if (q) q.onclick = () => { sel.vehiculoId = null; pintarAsociado(); };
+  };
+  pintarAsociado();
+  $('#dr-buscar').oninput = (e) => {
+    const lista = buscarVehiculos(e.target.value).slice(0, 6);
+    $('#dr-res').innerHTML = lista.map((v) => `<div class="resultado" data-pick="${v.id}"><div><strong>${esc(cliente(v.clienteId)?.nombre || '')}</strong> <small>${esc(cliente(v.clienteId)?.telefono || '')}</small><br><small>${esc(v.marca)} ${esc(v.modelo)}</small></div><strong>${esc(v.placa)}</strong></div>`).join('');
+  };
+  $('#dr-res').onclick = (e) => {
+    const p = e.target.closest('[data-pick]'); if (!p) return;
+    const v = vehiculo(p.dataset.pick); const c = cliente(v.clienteId);
+    sel.vehiculoId = v.id;
+    $('#dr-cliente').value = c?.nombre || '';
+    $('#dr-telefono').value = c?.telefono || '';
+    $('#dr-vehiculo').value = `${v.marca} ${v.modelo}${v.anio ? ' ' + v.anio : ''} · ${v.placa}`;
+    $('#dr-res').innerHTML = ''; $('#dr-buscar').value = '';
+    pintarAsociado();
+  };
+  $('#dr-guardar').onclick = async () => {
+    const nuevo = { cliente: $('#dr-cliente').value.trim(), telefono: $('#dr-telefono').value.trim(), vehiculo: $('#dr-vehiculo').value.trim(), vehiculoId: sel.vehiculoId };
+    const antes = { cliente: r.cliente || '', telefono: r.telefono || '', vehiculo: r.vehiculo || '', vehiculoId: r.vehiculoId || null };
+    if (Object.keys(nuevo).every((k) => (nuevo[k] || '') === (antes[k] || ''))) { cerrarModal(); return; }
+    const actual = db.reparaciones.find((x) => x.id === id); if (!actual) return;
+    actual.cambiosDatos = [...(actual.cambiosDatos || []), { fecha: hoyISO(), por: (typeof Nube !== 'undefined' && Nube.perfil?.nombre) || '', antes }];
+    Object.assign(actual, nuevo, { actualizado: new Date().toISOString() });
+    repDirty = false;
+    await guardar();
+    cerrarModal();
+    toast('Datos del cliente/vehículo actualizados');
+    if (repEdit && repEdit.id === id) abrirReparacion(id); else renderReparaciones();
+  };
 }
 
 initReparaciones();
