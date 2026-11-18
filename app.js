@@ -1862,9 +1862,9 @@ async function abrirEnlaceCliente(vid, desde = null) {
               <button type="button" class="btn small primary" data-enl="copiar">Copiar enlace</button>
               <a class="btn small ghost" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a>
               <button type="button" class="btn small wa" data-enl="wa">Enviar por WhatsApp</button>
-              <button type="button" class="btn small ghost" data-enl="png">Descargar QR</button>
-              <button type="button" class="btn small ghost" data-enl="imprimir">Imprimir sticker</button>
+              <button type="button" class="btn small ghost" data-enl="png">Descargar solo el QR</button>
             </div>
+            <div id="sticker-box">${bloqueStickersHTML(v)}</div>
             <p class="hint"><strong>Sticker NFC:</strong> con la app gratuita <em>NFC Tools</em> (Android o iPhone) elige Escribir → Agregar registro → URL y pega este enlace.</p>
             <div class="enlace-botones" style="border-top:1px solid var(--line);padding-top:10px">
               <button type="button" class="btn tiny ghost" data-enl="regenerar">Cambiar enlace (el anterior deja de funcionar)</button>
@@ -1901,17 +1901,8 @@ async function abrirEnlaceCliente(vid, desde = null) {
         const a = document.createElement('a'); a.href = qrPNG(crearQR(urlHistorial(g))); a.download = `QR historial ${v.placa}.png`; a.click();
         return;
       }
-      case 'imprimir': {
-        await cargarQR();
-        const img = qrPNG(crearQR(urlHistorial(g)), 10, 2);
-        imprimirDocumento(`<div class="sticker-qr">
-          <img src="img/logo.png" alt="" class="sticker-logo">
-          <img src="${img}" alt="QR" class="sticker-img">
-          <div class="sticker-txt">Escanea para ver el historial de tu vehículo</div>
-          <div class="sticker-placa">${esc(v.placa)}</div>
-        </div>`, `Sticker QR ${v.placa}`);
-        return;
-      }
+      default:
+        if (b.dataset.enl.startsWith('st-')) await accionSticker(b.dataset.enl, g);
     }
   });
   if (v.token) {
@@ -1937,4 +1928,186 @@ function abrirEnlaceDoc(d, desde) {
     return;
   }
   abrirEnlaceCliente(vid, desde);
+}
+
+// ===================== STICKERS QR (impresora térmica, papel 76 × 130 mm) =====================
+// La hoja (una etiqueta de 76 × 130 mm) lleva 1 o 2 stickers de 76 × 52 mm con el QR ya puesto.
+// Se dibuja en un lienzo: se puede imprimir directo (computadora con el driver de la impresora)
+// o descargar como imagen para imprimirla desde la app de la impresora (tablet o teléfono).
+const HOJA_STICKER = { ancho: 76, alto: 130, altoSticker: 52, porHoja: 2 };
+const COLA_STICKERS_KEY = 'jacks4wd-cola-stickers';
+
+function colaStickers() {
+  try { const c = JSON.parse(localStorage.getItem(COLA_STICKERS_KEY) || '[]'); return Array.isArray(c) ? c.filter((id) => vehiculo(id)?.token).slice(0, HOJA_STICKER.porHoja) : []; }
+  catch { return []; }
+}
+function guardarColaStickers(c) { try { localStorage.setItem(COLA_STICKERS_KEY, JSON.stringify(c)); } catch { /* sin almacenamiento */ } }
+
+let logoSticker = null;
+function cargarLogoSticker() {
+  if (logoSticker) return Promise.resolve(logoSticker);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => { logoSticker = img; res(img); };
+    img.onerror = () => rej(new Error('No se pudo cargar el logo.'));
+    img.src = 'img/logo.png';
+  });
+}
+
+// Parte un texto en líneas que quepan en "ancho"
+function lineasTexto(ctx, texto, ancho) {
+  const out = []; let linea = '';
+  texto.split(/\s+/).forEach((p) => {
+    const prueba = linea ? linea + ' ' + p : p;
+    if (ctx.measureText(prueba).width <= ancho || !linea) linea = prueba; else { out.push(linea); linea = p; }
+  });
+  if (linea) out.push(linea);
+  return out;
+}
+
+function dibujarSticker(ctx, mm, ox, oy, v, logo) {
+  const w = HOJA_STICKER.ancho * mm; const h = HOJA_STICKER.altoSticker * mm;
+  const m = 2.5 * mm; const pad = 3 * mm;
+  const fuente = '"Segoe UI", Roboto, Arial, sans-serif';
+  ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
+
+  // Borde redondeado
+  ctx.lineWidth = 0.35 * mm;
+  const r = 3.5 * mm; const bx = ox + m; const by = oy + m; const bw = w - 2 * m; const bh = h - 2 * m;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, r); ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+  ctx.arcTo(bx, by + bh, bx, by, r); ctx.arcTo(bx, by, bx + bw, by, r); ctx.closePath(); ctx.stroke();
+
+  // QR (módulos dibujados en píxeles enteros para que salga nítido en la térmica)
+  const s = 37 * mm;
+  const qx = ox + m + pad; const qy = oy + (h - s) / 2;
+  const q = crearQR(urlHistorial(v)); const n = q.getModuleCount();
+  const celda = Math.floor(s / (n + 2)); const lado = celda * n;
+  const x0 = Math.round(qx + (s - lado) / 2); const y0 = Math.round(qy + (s - lado) / 2);
+  for (let fila = 0; fila < n; fila++) for (let col = 0; col < n; col++) if (q.isDark(fila, col)) ctx.fillRect(x0 + col * celda, y0 + fila * celda, celda, celda);
+
+  // Columna derecha: logo, título entre líneas, texto y placa (con ajuste automático de tamaño)
+  const cx = qx + s + pad; const cw = ox + w - m - pad - cx; const centro = cx + cw / 2;
+  for (let k = 1; k >= 0.7; k -= 0.05) {
+    const lw = cw * 0.86; const lh = lw * logo.height / logo.width;
+    const tTit = 2.5 * mm * k; const tTxt = 1.9 * mm * k; const tPla = 2.4 * mm * k;
+    ctx.font = `600 ${tTit}px ${fuente}`; const lTit = lineasTexto(ctx, `Identificador de veh${'í'}culo`, cw - 1 * mm);
+    ctx.font = `${tTxt}px ${fuente}`; const lTxt = lineasTexto(ctx, 'Gracias por tu confianza, escanea el QR con tu dispositivo y accede al historial de servicios y reparaciones.', cw);
+    const alto = lh + 1.4 * mm + lTit.length * tTit * 1.2 + 1.4 * mm + 1.2 * mm + lTxt.length * tTxt * 1.3 + 1.2 * mm + tPla * 1.2;
+    if (alto > s && k > 0.71) continue;
+    let y = qy + Math.max(0, (s - alto) / 2);
+    ctx.drawImage(logo, centro - lw / 2, y, lw, lh); y += lh + 1.4 * mm;
+    ctx.lineWidth = 0.25 * mm;
+    ctx.beginPath(); ctx.moveTo(cx + 0.5 * mm, y); ctx.lineTo(cx + cw - 0.5 * mm, y); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `600 ${tTit}px ${fuente}`;
+    y += 0.7 * mm;
+    lTit.forEach((l) => { y += tTit * 0.6; ctx.fillText(l, centro, y); y += tTit * 0.6; });
+    y += 0.7 * mm;
+    ctx.beginPath(); ctx.moveTo(cx + 0.5 * mm, y); ctx.lineTo(cx + cw - 0.5 * mm, y); ctx.stroke();
+    y += 1.2 * mm;
+    ctx.font = `${tTxt}px ${fuente}`;
+    lTxt.forEach((l) => { y += tTxt * 0.65; ctx.fillText(l, centro, y); y += tTxt * 0.65; });
+    y += 1.2 * mm;
+    ctx.font = `700 ${tPla}px ${fuente}`;
+    y += tPla * 0.6; ctx.fillText(v.placa || '', centro, y);
+    break;
+  }
+}
+
+// Hoja de 76 × 130 mm con los stickers de los vehículos indicados (1 o 2), arriba hacia abajo
+async function lienzoHojaStickers(vids, ppp = 300) {
+  await cargarQR();
+  const logo = await cargarLogoSticker();
+  const mm = ppp / 25.4;
+  const c = document.createElement('canvas');
+  c.width = Math.round(HOJA_STICKER.ancho * mm); c.height = Math.round(HOJA_STICKER.alto * mm);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  const hueco = HOJA_STICKER.alto / HOJA_STICKER.porHoja; // 65 mm por sticker
+  vids.slice(0, HOJA_STICKER.porHoja).forEach((vid, i) => {
+    const v = vehiculo(vid); if (!v?.token) return;
+    dibujarSticker(ctx, mm, 0, (i * hueco + (hueco - HOJA_STICKER.altoSticker) / 2) * mm, v, logo);
+  });
+  // Línea de corte entre los dos stickers
+  if (vids.length > 1) {
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 0.2 * mm; ctx.setLineDash([1.5 * mm, 1.5 * mm]);
+    ctx.beginPath(); ctx.moveTo(0, hueco * mm); ctx.lineTo(c.width, hueco * mm); ctx.stroke(); ctx.setLineDash([]);
+  }
+  return c;
+}
+
+// Imprime la hoja al tamaño exacto de la etiqueta (76 × 130 mm, sin márgenes)
+async function imprimirHojaStickers(vids) {
+  const c = await lienzoHojaStickers(vids);
+  const area = $('#print-area');
+  area.innerHTML = `<img class="hoja-stickers" src="${c.toDataURL('image/png')}" alt="">`;
+  let estilo = $('#estilo-etiqueta');
+  if (!estilo) { estilo = document.createElement('style'); estilo.id = 'estilo-etiqueta'; document.head.appendChild(estilo); }
+  estilo.textContent = `@media print { @page { size: ${HOJA_STICKER.ancho}mm ${HOJA_STICKER.alto}mm; margin: 0; } }`;
+  const tituloOriginal = document.title;
+  document.title = 'Stickers QR ' + vids.map((id) => vehiculo(id)?.placa || '').join(' ');
+  return new Promise((listo) => {
+    const fin = () => { document.title = tituloOriginal; estilo.textContent = ''; window.removeEventListener('afterprint', fin); setTimeout(listo, 300); };
+    window.addEventListener('afterprint', fin);
+    const img = area.querySelector('img');
+    const imprimir = () => setTimeout(() => window.print(), 50);
+    if (!img.complete) img.onload = imprimir; else imprimir();
+  });
+}
+
+async function descargarHojaStickers(vids) {
+  const c = await lienzoHojaStickers(vids);
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = `Stickers QR ${vids.map((id) => vehiculo(id)?.placa || '').join(' ')}.png`;
+  a.click();
+}
+
+// Bloque de la ventana "Enlace / QR": imprimir este sticker o juntarlo con otro en la misma hoja
+function bloqueStickersHTML(v) {
+  const cola = colaStickers();
+  const enCola = cola.includes(v.id);
+  return `<div class="sticker-opciones">
+    <strong>Sticker para el vehículo</strong> <small class="hint">(papel de 7.6 × 13 cm, hasta 2 por hoja)</small>
+    <div class="enlace-botones">
+      <button type="button" class="btn small primary" data-enl="st-imprimir">Imprimir solo este</button>
+      ${enCola ? '<button type="button" class="btn small ghost" data-enl="st-quitar">Quitar de la cola</button>'
+        : `<button type="button" class="btn small ghost" data-enl="st-cola" ${cola.length >= HOJA_STICKER.porHoja ? 'disabled' : ''}>Agregar a la cola (${cola.length}/${HOJA_STICKER.porHoja})</button>`}
+      <button type="button" class="btn small ghost" data-enl="st-descargar">Descargar imagen</button>
+    </div>
+    ${cola.length ? `<div class="cola-stickers">
+      <span>En cola: ${cola.map((id) => { const x = vehiculo(id); return `<b>${esc(x.marca)} ${esc(x.modelo)} · ${esc(x.placa)}</b>`; }).join(' y ')}</span>
+      <span class="enlace-botones" style="margin:0">
+        <button type="button" class="btn tiny primary" data-enl="st-imprimir-cola">Imprimir cola (${cola.length})</button>
+        <button type="button" class="btn tiny ghost" data-enl="st-descargar-cola">Descargar cola</button>
+        <button type="button" class="btn tiny ghost" data-enl="st-vaciar">Vaciar</button>
+      </span>
+    </div>` : ''}
+    <p class="hint" style="margin:6px 0 0">En la computadora se imprime directo (elige la impresora térmica, tamaño 76 × 130 mm y márgenes "Ninguno"). En tablet o teléfono usa <em>Descargar imagen</em> e imprímela desde la app de la impresora.</p>
+  </div>`;
+}
+
+async function accionSticker(accion, v) {
+  let cola = colaStickers();
+  try {
+    switch (accion) {
+      case 'st-imprimir': await imprimirHojaStickers([v.id]); return;
+      case 'st-descargar': await descargarHojaStickers([v.id]); return;
+      case 'st-cola':
+        if (!cola.includes(v.id)) cola.push(v.id);
+        guardarColaStickers(cola.slice(0, HOJA_STICKER.porHoja));
+        toast(cola.length >= HOJA_STICKER.porHoja ? 'Cola completa: ya puedes imprimir los 2 stickers en una hoja' : 'Agregado a la cola. Abre otro vehículo para completar la hoja.');
+        break;
+      case 'st-quitar': guardarColaStickers(cola.filter((id) => id !== v.id)); break;
+      case 'st-vaciar': guardarColaStickers([]); break;
+      case 'st-imprimir-cola':
+        await imprimirHojaStickers(cola);
+        if (await confirmar('¿Los stickers se imprimieron bien? Si es así, se vacía la cola.', { titulo: 'Cola de stickers', si: 'Sí, vaciar la cola', no: 'No, mantenerla' })) guardarColaStickers([]);
+        break;
+      case 'st-descargar-cola': await descargarHojaStickers(cola); break;
+      default: return;
+    }
+  } catch (err) { avisar(err.message || 'No se pudo preparar el sticker.'); return; }
+  const box = $('#sticker-box'); if (box) box.innerHTML = bloqueStickersHTML(v);
 }

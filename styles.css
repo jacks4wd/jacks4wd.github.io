@@ -803,11 +803,6 @@ body.rol-taller .solo-admin { display: none !important; }
 .qr-box img { width: 100%; image-rendering: pixelated; }
 .enlace-datos { flex: 1; min-width: 240px; }
 .enlace-botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.sticker-qr { width: 60mm; margin: 0 auto; text-align: center; border: 1px dashed #999; border-radius: 6mm; padding: 5mm; font-family: Arial, sans-serif; }
-.sticker-logo { height: 9mm; }
-.sticker-img { width: 46mm; height: 46mm; image-rendering: pixelated; display: block; margin: 3mm auto; }
-.sticker-txt { font-size: 9pt; font-weight: 700; }
-.sticker-placa { font-size: 11pt; letter-spacing: 1px; margin-top: 1mm; }
 
 /* ===== Configuración: póliza de garantías ===== */
 .g-filas { margin: 10px 0; }
@@ -843,3 +838,8 @@ body.rol-taller .solo-admin { display: none !important; }
 .cli-unir { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .cli-unir summary { cursor: pointer; font-weight: 600; }
 .cli-cab-acc { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ===== Stickers QR (impresora térmica) ===== */
+.sticker-opciones { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.cola-stickers { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 8px; padding: 8px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; font-size: .9rem; }
+@media print { #print-area .hoja-stickers { display: block; width: 75.7mm; height: 129.5mm; margin: 0; page-break-after: avoid; } }
