@@ -2243,3 +2243,23 @@ async function accionSticker(accion, v, boton) {
   } catch (err) { avisar(err.message || 'No se pudo preparar el sticker.'); return; }
   const box = $('#sticker-box'); if (box) box.innerHTML = bloqueStickersHTML(v);
 }
+
+// ===================== DOCUMENTOS IGUALES EN TODOS LOS EQUIPOS =====================
+// El presupuesto y la reparación miden siempre 900 px (como en la computadora). En pantallas
+// más angostas (tablet, teléfono) se reducen a escala para verse completos e idénticos;
+// por debajo de 60 % se quedan en 60 % y se desplazan de lado.
+const ANCHO_DOC = 900;
+function ajustarEscalaDocs() {
+  ['#pres-editor', '#rep-editor'].forEach((sel) => {
+    const cont = $(sel); const doc = cont && cont.querySelector('.doc-editor');
+    if (!doc || !cont.clientWidth) return;
+    const z = Math.max(0.6, Math.min(1, cont.clientWidth / ANCHO_DOC));
+    doc.style.zoom = z < 0.999 ? String(Math.floor(z * 1000) / 1000) : '';
+  });
+}
+(() => {
+  const obs = new MutationObserver(() => requestAnimationFrame(ajustarEscalaDocs));
+  ['#pres-editor', '#rep-editor'].forEach((sel) => { const el = $(sel); if (el) obs.observe(el, { childList: true, attributes: true, attributeFilter: ['hidden'] }); });
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => ajustarEscalaDocs()); ['#pres-editor', '#rep-editor'].forEach((sel) => { const el = $(sel); if (el) ro.observe(el); }); }
+  window.addEventListener('resize', ajustarEscalaDocs);
+})();
