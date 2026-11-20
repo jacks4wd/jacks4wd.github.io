@@ -130,10 +130,16 @@ function renderReparaciones() {
 let repEdit = null;
 let repDirty = false;
 
+// Las descripciones de los ítems crecen hacia abajo para mostrar textos largos completos
+function ajustarAlturasRep() {
+  requestAnimationFrame(() => $$('#rep-items-edit textarea[data-it="desc"]').forEach(autoAltura));
+}
+
 function mostrarEditorRep(si) {
   $('#rep-lista').hidden = si;
   $('#rep-editor').hidden = !si;
   window.scrollTo(0, 0);
+  if (si) ajustarAlturasRep();
 }
 
 function abrirReparacion(id) {
@@ -211,7 +217,7 @@ function itemsEditablesHTML(r) {
   return r.items.map((it, i) => `<tr data-ri="${i}">
     <td class="col-cant"><input data-it="cant" inputmode="decimal" value="${fmtCant(it.cant)}" aria-label="Cantidad">
       <select data-it="unidad" aria-label="Unidad">${[...new Set([...UNIDADES, it.unidad || 'Und.'])].map((u) => `<option ${u === it.unidad ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>
-    <td><input data-it="desc" value="${esc(it.desc)}" placeholder="Descripción del trabajo o pieza"></td>
+    <td><textarea data-it="desc" rows="1" placeholder="Descripción del trabajo o pieza">${esc(it.desc)}</textarea></td>
     <td><button type="button" class="rep-estado ${it.estado}" data-rep="toggle" title="Tocar para cambiar">${it.estado === 'aprobado' ? 'Aprobado' : 'Rechazado'}</button></td>
     <td><button type="button" class="btn tiny ghost" data-rep="quitar-item" title="Quitar">✕</button></td>
   </tr>`).join('');
@@ -307,6 +313,7 @@ function pintarEditorRep() {
         </label>
       </div>
     </form>`;
+  ajustarAlturasRep();
 }
 
 function leerEditorRep() {
@@ -511,13 +518,30 @@ function initReparaciones() {
   $('#btn-nueva-rep').onclick = () => nuevaReparacion();
 
   const ed = $('#rep-editor');
+  // Cliente nuevo registrado desde el módulo común: se usa en la reparación
+  ed.addEventListener('cliente-registrado', (e) => {
+    if (!repEdit || !e.detail?.vid) return;
+    leerEditorRep(); asignarVehiculoRep(e.detail.vid); delete repEdit._nuevo; delete repEdit._otroDe; repDirty = true;
+    $('#rep-cliente').innerHTML = clienteRepHTML(repEdit);
+  });
   ed.addEventListener('input', (e) => {
     if (e.target.id === 'rep-buscar-cliente') {
       const lista = buscarVehiculos(e.target.value).slice(0, 6);
       $('#rep-res-cliente').innerHTML = lista.map((v) => `<div class="resultado" data-pickrep="${v.id}"><div><strong>${esc(cliente(v.clienteId).nombre)}</strong> <small>${esc(cliente(v.clienteId).telefono)}</small><br><small>${esc(v.marca)} ${esc(v.modelo)}</small></div><strong>${esc(v.placa)}</strong></div>`).join('');
       return;
     }
+    if (e.target.dataset.it === 'desc') autoAltura(e.target); // el texto largo baja a la línea siguiente
     repDirty = true;
+  });
+  // Enter en un ítem: pasa al siguiente o agrega uno nuevo (Shift+Enter = salto de línea en el mismo ítem)
+  ed.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    const tr = e.target.closest('#rep-items-edit tr'); if (!tr || !e.target.matches('[data-it]')) return;
+    e.preventDefault();
+    const next = tr.nextElementSibling;
+    if (next) { next.querySelector('[data-it="desc"]')?.focus(); return; }
+    leerEditorRep(); repEdit.items.push({ cant: 1, unidad: 'Und.', desc: '', sku: '', estado: 'aprobado' }); repDirty = true; pintarEditorRep();
+    $$('#rep-items-edit [data-it="desc"]').at(-1)?.focus();
   });
   ed.addEventListener('change', (e) => {
     repDirty = true;

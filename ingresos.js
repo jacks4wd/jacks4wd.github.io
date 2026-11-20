@@ -261,6 +261,12 @@ function initIngresos() {
     ingDirty = true;
     if (e.target.id === 'ing-tecnico') { const w = $('#ing-tecnico-otro-wrap'); w.hidden = e.target.value !== '__otro'; if (!w.hidden) $('#ing-tecnico-otro').focus(); }
   });
+  // Cliente nuevo registrado desde el módulo común: se usa en el diagnóstico
+  c.addEventListener('cliente-registrado', (e) => {
+    if (!ingEdit || !e.detail?.vid) return;
+    leerFormIng(); ingEdit.vehiculoId = e.detail.vid; delete ingEdit._nuevo; delete ingEdit._otroDe; ingDirty = true;
+    $('#ing-cliente').innerHTML = clienteIngHTML(ingEdit);
+  });
   c.addEventListener('click', async (e) => {
     const t = e.target;
     // Listado

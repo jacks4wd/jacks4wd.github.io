@@ -778,6 +778,12 @@ function initRevisiones() {
   };
 
   const cont = $('#rv-nueva');
+  // Cliente nuevo registrado desde el módulo común: se usa en la revisión
+  cont.addEventListener('cliente-registrado', (e) => {
+    if (!rvEdit || !e.detail?.vid) return;
+    leerCabeceraRev(); rvEdit.vehiculoId = e.detail.vid; delete rvEdit._nuevo; delete rvEdit._otroDe; rvDirty = true;
+    $('#rv-cliente').innerHTML = clienteHTML();
+  });
   cont.addEventListener('click', async (e) => {
     const r = rvEdit; if (!r) return;
     const t = e.target;

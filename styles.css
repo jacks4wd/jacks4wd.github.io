@@ -845,3 +845,4 @@ body.rol-taller .solo-admin { display: none !important; }
 @media print { #print-area .hoja-stickers { display: block; width: 75.7mm; height: 129.5mm; margin: 0; page-break-after: avoid; } }
 .ajuste-sticker { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: .88rem; }
 .ajuste-sticker b { display: inline-block; min-width: 56px; text-align: center; }
+.rep-items-edit textarea[data-it="desc"] { width: 100%; resize: none; overflow: hidden; line-height: 1.35; font-family: inherit; display: block; min-height: 34px; }

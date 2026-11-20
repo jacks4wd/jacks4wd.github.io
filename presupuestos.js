@@ -224,10 +224,7 @@ function vehiculoRegistradoHTML() {
 // Es opcional: también se puede hacer un presupuesto libre, incluso sin nombre.
 function presCrearClienteHTML(n = {}) {
   if (!presEdit || presOtroDe || (presEdit.vehiculoId && vehiculo(presEdit.vehiculoId))) return '';
-  return camposClienteNuevoHTML(n, 'pres-nuevo-cliente', `
-    <div class="actions" style="justify-content:flex-start;margin-top:8px">
-      <button type="button" class="btn small primary" data-pact="registrar-cliente">Registrar cliente y usarlo en el presupuesto</button>
-    </div>`);
+  return camposClienteNuevoHTML(n, 'pres-nuevo-cliente');
 }
 function refrescarClientePres(n) {
   $('#pres-veh-registrado').innerHTML = vehiculoRegistradoHTML();
@@ -730,6 +727,14 @@ function initPresupuestos() {
   };
 
   const ed = $('#pres-editor');
+  // Cliente nuevo registrado desde el módulo común: se usa en el presupuesto
+  ed.addEventListener('cliente-registrado', (e) => {
+    if (!presEdit || !e.detail?.vid) return;
+    leerEditor(); asignarVehiculo(e.detail.vid); presDirty = true; delete presEdit.noRegistrar;
+    const f = $('#form-pres');
+    ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
+    refrescarClientePres();
+  });
   ed.addEventListener('input', (e) => {
     if (e.target.id === 'pres-buscar') {
       const lista = buscarVehiculos(e.target.value).slice(0, 6);
@@ -791,20 +796,6 @@ function initPresupuestos() {
       return;
     }
     if (b.dataset.pact === 'otro-veh-cancelar') { presOtroDe = null; refrescarClientePres(); return; }
-    if (b.dataset.pact === 'registrar-cliente') {
-      const d = {};
-      $$('#pres-nuevo-cliente [data-nuevo]').forEach((i) => (d[i.dataset.nuevo] = i.value.trim()));
-      if (['nombre', 'telefono', 'marca', 'modelo', 'placa'].some((k) => !d[k])) { alert('Para registrar al cliente completa nombre, teléfono, marca, modelo y placa.'); return; }
-      if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); return; }
-      const vid = await obtenerVehiculoNuevo(d); if (!vid) return;
-      leerEditor(); asignarVehiculo(vid); presDirty = true; delete presEdit.noRegistrar;
-      const f = $('#form-pres');
-      ['cliente', 'telefono', 'vehiculo'].forEach((k) => (f[k].value = presEdit[k]));
-      refrescarClientePres();
-      await guardar(false);
-      toast(`Cliente registrado: ${presEdit.cliente}`);
-      return;
-    }
     if (b.dataset.pact === 'otro-veh-guardar') {
       const vid = await crearVehiculoCliente(presOtroDe, leerCamposVehiculo($('#pres-otro-veh')));
       if (!vid) return;

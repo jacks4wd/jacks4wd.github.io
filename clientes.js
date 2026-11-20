@@ -76,50 +76,17 @@ function renderClientes() {
   v.textContent = db.clientes.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no hay clientes registrados.';
 }
 
-// "+ Crear nuevo cliente": cliente con (opcionalmente) su primer vehículo
+// "+ Crear nuevo cliente": el mismo módulo que en las demás pestañas (aquí el vehículo es opcional)
 function crearClienteNuevo() {
   abrirModal(`
-    <h3>Nuevo cliente</h3>
-    <div class="grid">
-      <label>Nombre *<input id="cn-nombre" autocomplete="off"></label>
-      <label>Teléfono *<input id="cn-telefono" placeholder="0414-1234567" inputmode="tel" autocomplete="off"></label>
-    </div>
-    <h4 class="subtitulo">Vehículo <span class="opt">(opcional; puedes agregar más después con «Editar»)</span></h4>
-    <div class="grid">
-      <label>Marca<input id="cn-marca" list="lista-marcas" autocomplete="off"></label>
-      <label>Modelo<input id="cn-modelo" autocomplete="off"></label>
-      <label>Placa<input id="cn-placa" class="upper" autocomplete="off"></label>
-      <label>Año<input id="cn-anio" inputmode="numeric" maxlength="4"></label>
-      <label>Color<input id="cn-color"></label>
-    </div>
-    <div class="actions" style="margin-top:12px">
-      <button type="button" class="btn ghost" data-act="cerrar">Cancelar</button>
-      <button type="button" class="btn primary" id="cn-guardar">Registrar cliente</button>
-    </div>`);
-  $('#cn-nombre').focus();
-  $('#cn-guardar').onclick = async () => {
-    const d = {};
-    ['nombre', 'telefono', 'marca', 'modelo', 'placa', 'anio', 'color'].forEach((k) => (d[k] = $('#cn-' + k).value.trim()));
-    if (!d.nombre) { alert('Escribe el nombre del cliente.'); $('#cn-nombre').focus(); return; }
-    if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos.'); $('#cn-telefono').focus(); return; }
-    const conVehiculo = d.marca || d.modelo || d.placa || d.anio || d.color;
-    let cid;
-    if (conVehiculo) {
-      if (!d.marca || !d.modelo || !d.placa) { alert('Para registrar el vehículo completa marca, modelo y placa (o deja los datos del vehículo en blanco).'); return; }
-      // Crea el cliente y el vehículo (avisa si la placa o el teléfono ya existen)
-      const vid = await obtenerVehiculoNuevo(d); if (!vid) return;
-      cid = vehiculo(vid).clienteId;
-    } else {
-      const existente = db.clientes.find((c) => telWhatsApp(c.telefono) === telWhatsApp(d.telefono));
-      if (existente) { avisar(`Ya existe un cliente con ese teléfono: ${existente.nombre}. Búscalo en la lista para editarlo.`); return; }
-      cid = uid();
-      db.clientes.push({ id: cid, nombre: d.nombre, telefono: d.telefono, creado: new Date().toISOString() });
-    }
-    await guardar();
-    toast(`Cliente registrado: ${cliente(cid)?.nombre || d.nombre}`);
+    <div class="form-head"><h3>Nuevo cliente</h3><button type="button" class="btn small ghost" data-act="cerrar">Cerrar</button></div>
+    <div id="cn-bloque">${camposClienteNuevoHTML({}, 'cn-nuevo-cliente', { abierto: true, cancelar: false, boton: 'Registrar cliente', vehiculoOpcional: true })}</div>
+    <p class="hint">Puedes agregarle más vehículos después con «Editar».</p>`);
+  $('#cn-bloque [data-nuevo="nombre"]')?.focus();
+  $('#cn-bloque').addEventListener('cliente-registrado', (e) => {
     if ($('#cli-buscar')) { $('#cli-buscar').value = ''; renderClientes(); }
-    verCliente(cid);
-  };
+    verCliente(e.detail.cid);
+  });
 }
 
 function verCliente(cid) {
