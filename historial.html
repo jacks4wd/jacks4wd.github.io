@@ -101,7 +101,7 @@
 <div class="wrap" id="app"><div class="estado">Cargando historial…</div></div>
 <div id="imprimir"></div>
 
-<script src="nube-config.js?v=187b2feecc"></script>
+<script src="nube-config.js?v=d88413f684"></script>
 <script src="aceites-fotos.js?v=0db4da2da7"></script>
 <script>
 (() => {
@@ -119,8 +119,13 @@
     : (typeof fotoPredeterminadaAceite === 'function' ? fotoPredeterminadaAceite(s.aceiteMarca, s.aceiteLinea, s.aceiteViscosidad) : ''));
   const sumarMeses = (iso, m) => { const [y, mo, d] = iso.split('-').map(Number); const f = new Date(y, mo - 1 + m, d); return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`; };
   const mensaje = (t) => { app.innerHTML = `<header><div class="top"><strong>${TALLER.nombre}</strong><img src="img/logo.png" alt=""></div></header><div class="card estado">${t}</div>${pie()}`; };
-  const pie = () => `<div class="acciones"><a class="btn wa" href="https://wa.me/${TALLER.wa}" target="_blank" rel="noopener">Escribir al taller por WhatsApp</a><a class="btn" href="garantias.html">Póliza de garantías</a></div>
+  const pie = () => {
+    const tienda = (typeof NUBE_CONFIG !== 'undefined' && NUBE_CONFIG.urlTienda ? NUBE_CONFIG.urlTienda.replace(/\/$/, '') : '');
+    const tokenValido = /^[A-Za-z0-9]{24,64}$/.test(token);
+    const enlaceTienda = (tienda && tokenValido) ? `<a class="btn" href="${tienda}/#/?cliente=${token}">🛍️ Tienda con descuento</a>` : '';
+    return `<div class="acciones"><a class="btn wa" href="https://wa.me/${TALLER.wa}" target="_blank" rel="noopener">Escribir al taller por WhatsApp</a>${enlaceTienda}<a class="btn" href="garantias.html">Póliza de garantías</a></div>
     <footer><strong>${TALLER.nombre}</strong> · ${TALLER.direccion} · Telf: ${TALLER.telefono}</footer>`;
+  };
 
   const token = (location.hash.slice(1) || new URLSearchParams(location.search).get('t') || '').trim();
   const cfg = typeof NUBE_CONFIG !== 'undefined' ? NUBE_CONFIG : null;

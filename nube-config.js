@@ -11,4 +11,5 @@ const NUBE_CONFIG = {
   segundosActualizacion: 30,       // cada cuánto se traen los cambios de otros dispositivos
   minutosInactividad: 30,          // la sesión se cierra sola tras este tiempo sin uso
   urlPublica: 'https://app.jacks4wd.com/', // dirección pública (garantías, historial del cliente)
+  urlTienda: '',                    // dirección de la tienda (vacío = no se muestra el enlace "tienda con descuento")
 };
