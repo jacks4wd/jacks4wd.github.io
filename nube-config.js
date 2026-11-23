@@ -10,5 +10,5 @@ const NUBE_CONFIG = {
   dominioUsuarios: 'jacks4wd.app', // "admin" → admin@jacks4wd.app
   segundosActualizacion: 30,       // cada cuánto se traen los cambios de otros dispositivos
   minutosInactividad: 30,          // la sesión se cierra sola tras este tiempo sin uso
-  urlPublica: 'https://jacks4wd.github.io/', // dirección pública (garantías, historial del cliente)
+  urlPublica: 'https://app.jacks4wd.com/', // dirección pública (garantías, historial del cliente)
 };
