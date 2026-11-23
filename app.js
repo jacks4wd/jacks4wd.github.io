@@ -614,12 +614,13 @@ function camposVehiculoHTML(d = {}) {
 // Es el mismo en todas las pestañas: botón "+ Crear nuevo cliente" → datos del cliente y su
 // vehículo → "Registrar cliente y usarlo". Al registrarlo se avisa a la pestaña con el evento
 // "cliente-registrado" (detalle: { vid, cid }) para que lo use en lo que se está creando.
-// op: { abierto, cancelar (true), boton, vehiculoOpcional }
+// op: { abierto, cancelar (true), boton, vehiculoOpcional, placaOpcional }
+// placaOpcional (Citas): el vehículo se puede registrar solo con marca y modelo; la placa se agrega después.
 function camposClienteNuevoHTML(n = {}, idGrid = '', op = {}) {
   const abierto = op.abierto || Object.values(n || {}).some((x) => String(x || '').trim());
-  const vo = !!op.vehiculoOpcional;
+  const vo = !!op.vehiculoOpcional; const po = vo || !!op.placaOpcional;
   const campo = (k, etq, extra = '') => `<label>${etq}<input data-nuevo="${k}" value="${esc(n[k] || '')}" ${extra}></label>`;
-  return `<div class="crear-cliente-box" data-veh-opcional="${vo ? 1 : 0}">
+  return `<div class="crear-cliente-box" data-veh-opcional="${vo ? 1 : 0}" data-placa-opcional="${op.placaOpcional ? 1 : 0}">
     <button type="button" class="btn small ghost btn-crear-cliente" data-crear-cliente ${abierto ? 'hidden' : ''}>+ Crear nuevo cliente</button>
     <div class="nuevo-cliente-campos" ${abierto ? '' : 'hidden'}>
       <div class="form-head" style="margin:10px 0 4px"><strong>Cliente nuevo</strong>${op.cancelar === false ? '' : '<button type="button" class="btn tiny ghost" data-cancelar-cliente>Cancelar</button>'}</div>
@@ -628,7 +629,7 @@ function camposClienteNuevoHTML(n = {}, idGrid = '', op = {}) {
         ${campo('telefono', 'Teléfono *', 'placeholder="0414-1234567" inputmode="tel"')}
         ${campo('marca', `Marca ${vo ? '<span class="opt">(opcional)</span>' : '*'}`, 'list="lista-marcas"')}
         ${campo('modelo', `Modelo ${vo ? '<span class="opt">(opcional)</span>' : '*'}`)}
-        ${campo('placa', `Placa ${vo ? '<span class="opt">(opcional)</span>' : '*'}`, 'class="upper"')}
+        ${campo('placa', `Placa ${po ? `<span class="opt">(opcional${op.placaOpcional ? ', se puede agregar después' : ''})</span>` : '*'}`, 'class="upper"')}
         ${campo('anio', 'Año <span class="opt">(opcional)</span>', 'inputmode="numeric" maxlength="4"')}
         ${campo('color', 'Color <span class="opt">(opcional)</span>')}
       </div>
@@ -647,9 +648,11 @@ async function registrarClienteDeBloque(box) {
   const vehOpcional = box.dataset.vehOpcional === '1';
   if (!d.nombre) { alert('Escribe el nombre del cliente.'); box.querySelector('[data-nuevo="nombre"]')?.focus(); return null; }
   if (soloDigitos(d.telefono).length < 10) { alert('Revisa el teléfono: debe tener al menos 10 dígitos (ej. 0414-1234567).'); box.querySelector('[data-nuevo="telefono"]')?.focus(); return null; }
+  const placaOpcional = box.dataset.placaOpcional === '1';
   const conVehiculo = d.marca || d.modelo || d.placa || d.anio || d.color;
-  if ((!vehOpcional || conVehiculo) && (!d.marca || !d.modelo || !d.placa)) {
-    alert(vehOpcional ? 'Para registrar el vehículo completa marca, modelo y placa (o deja los datos del vehículo en blanco).' : 'Completa la marca, el modelo y la placa del vehículo.');
+  if ((!vehOpcional || conVehiculo) && (!d.marca || !d.modelo || (!d.placa && !placaOpcional))) {
+    alert(placaOpcional ? 'Para registrar el vehículo escribe al menos la marca y el modelo (la placa se puede agregar después), o deja los datos del vehículo en blanco.'
+      : vehOpcional ? 'Para registrar el vehículo completa marca, modelo y placa (o deja los datos del vehículo en blanco).' : 'Completa la marca, el modelo y la placa del vehículo.');
     return null;
   }
   let vid = null; let cid = null;
@@ -1622,7 +1625,7 @@ function formCita(ct = null, preVid = null) {
         <div id="cita-veh" class="seleccion" style="margin:0 0 8px">${resumenVeh()}</div>
         <input id="cita-buscar" type="search" placeholder="Buscar cliente registrado por nombre, teléfono o placa…">
         <div id="cita-res" class="picker-list"></div>
-        <div id="cita-crear">${camposClienteNuevoHTML({}, 'cita-nuevo-cliente', { vehiculoOpcional: true })}</div>
+        <div id="cita-crear">${camposClienteNuevoHTML({}, 'cita-nuevo-cliente', { vehiculoOpcional: true, placaOpcional: true })}</div>
       </fieldset>
       <label>Notas<textarea name="notas" rows="2">${esc(ct.notas)}</textarea></label>
       <div class="actions" style="margin-top:12px">
@@ -1644,7 +1647,7 @@ function formCita(ct = null, preVid = null) {
     if (r.vid) { vidSel = r.vid; sinVeh = { nombre: '', telefono: '', vehiculo: '' }; }
     else { const c = cliente(r.cid); vidSel = null; sinVeh = { nombre: c?.nombre || '', telefono: c?.telefono || '', vehiculo: '' }; }
     otroDe = null;
-    $('#cita-crear').innerHTML = camposClienteNuevoHTML({}, 'cita-nuevo-cliente', { vehiculoOpcional: true });
+    $('#cita-crear').innerHTML = camposClienteNuevoHTML({}, 'cita-nuevo-cliente', { vehiculoOpcional: true, placaOpcional: true });
     pintarVeh();
   };
   $('#cita-crear').addEventListener('cliente-registrado', (e) => usarRegistrado(e.detail));

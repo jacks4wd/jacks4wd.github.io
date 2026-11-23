@@ -222,8 +222,9 @@ function datosVehiculoRev(rev) {
 
 // Crea (o reutiliza) cliente y vehículo a partir de los datos escritos en la revisión
 async function obtenerVehiculoNuevo(d) {
-  const placa = d.placa.toUpperCase().replace(/\s+/g, '');
-  const existente = db.vehiculos.find((v) => v.placa === placa);
+  const placa = (d.placa || '').toUpperCase().replace(/\s+/g, '');
+  // Sin placa (p. ej. cita pedida por WhatsApp): no se compara con otros vehículos
+  const existente = placa && db.vehiculos.find((v) => v.placa === placa);
   if (existente) {
     const c = cliente(existente.clienteId);
     if (!await confirmar(`La placa ${placa} ya está registrada (${existente.marca} ${existente.modelo} de ${c?.nombre || 'cliente'}).\n¿Usar ese vehículo?`)) return null;
