@@ -155,8 +155,8 @@ const presupuestosDerivados = (r) => (db.presupuestos || []).filter((p) => p.ori
 // ---------- Tipo de trabajo y reparaciones manuales ----------
 const TIPOS_REP = { reparacion: 'Reparación', modificacion: 'Modificación' };
 const tipoRep = (r) => TIPOS_REP[r?.tipo] || 'Reparación';
-// Las reparaciones manuales o creadas desde un diagnóstico (sin presupuesto) tienen ítems editables
-const itemsManuales = (r) => !r.presupuestoId || !!r.reemplazaA; // las correcciones también
+// Mientras esté "en proceso", los ítems y el tipo son editables (provenga o no de un presupuesto).
+// Solo se bloquea al cerrarse como "culminado" o "cancelado" (o para el rol taller).
 let repNueva = false;
 
 // Nueva reparación manual (solo admin). pre: datos iniciales (p. ej. desde un diagnóstico)
@@ -212,14 +212,15 @@ function itemsRepHTML(r, editable) {
   </tr>`).join('');
 }
 
-// Ítems editables (reparaciones manuales o desde diagnóstico)
+// Ítems editables (mientras la reparación está "en proceso")
 function itemsEditablesHTML(r) {
   return r.items.map((it, i) => `<tr data-ri="${i}">
     <td class="col-cant"><input data-it="cant" inputmode="decimal" value="${fmtCant(it.cant)}" aria-label="Cantidad">
       <select data-it="unidad" aria-label="Unidad">${[...new Set([...UNIDADES, it.unidad || 'Und.'])].map((u) => `<option ${u === it.unidad ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>
     <td><textarea data-it="desc" rows="1" placeholder="Descripción del trabajo o pieza">${esc(it.desc)}</textarea></td>
+    <td class="col-sku"><input data-it="sku" value="${esc(it.sku || '')}" placeholder="—" aria-label="SKU"></td>
     <td><button type="button" class="rep-estado ${it.estado}" data-rep="toggle" title="Tocar para cambiar">${it.estado === 'aprobado' ? 'Aprobado' : 'Rechazado'}</button></td>
-    <td><button type="button" class="btn tiny ghost" data-rep="quitar-item" title="Quitar">✕</button></td>
+    <td class="col-quitar"><button type="button" class="btn tiny ghost" data-rep="quitar-item" title="Quitar">✕</button></td>
   </tr>`).join('');
 }
 
@@ -227,7 +228,7 @@ function pintarEditorRep() {
   const r = repEdit;
   const cerrada = esCerrada(r);
   const bloqueada = cerrada || soloLectura(); // el rol taller solo puede ver
-  const editarItems = !bloqueada && (repNueva || itemsManuales(r));
+  const editarItems = !bloqueada;
   const otro = r.tecnico && !tecnicos().includes(r.tecnico);
   const rechazados = r.items.filter((i) => i.estado === 'rechazado' && i.desc).length;
   const derivados = repNueva ? [] : presupuestosDerivados(r);
@@ -293,16 +294,18 @@ function pintarEditorRep() {
       ${(r.cambiosDatos || []).length ? `<details class="rep-cambios"><summary>Cambios en los datos del cliente/vehículo (${r.cambiosDatos.length})</summary><ul>${r.cambiosDatos.map((c) => `<li>${fmtFecha(c.fecha)}${c.por ? ' · ' + esc(c.por) : ''}: antes «${esc(c.antes.cliente || '—')}» · ${esc(c.antes.telefono || '—')} · ${esc(c.antes.vehiculo || '—')}</li>`).join('')}</ul></details>` : ''}
       ${editarItems ? `
         <table class="doc-items rep-tabla rep-items-edit">
-          <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>ESTADO</th><th></th></tr></thead>
+          <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>SKU</th><th>ESTADO</th><th></th></tr></thead>
           <tbody id="rep-items-edit">${itemsEditablesHTML(r)}</tbody>
         </table>
-        <div class="doc-add"><button type="button" class="btn small ghost" data-rep="agregar-item">+ Agregar ítem</button></div>`
+        <div class="doc-add">
+          <button type="button" class="btn small ghost" data-rep="agregar-item">+ Agregar ítem</button>
+          <small class="hint">Puedes modificar, agregar o quitar ítems y tocar su estado para cambiarlo entre Aprobado y Rechazado.</small>
+        </div>`
       : `
         <table class="doc-items rep-tabla">
           <thead><tr><th>CANTIDAD</th><th>DESCRIPCIÓN</th><th>SKU</th><th>ESTADO</th></tr></thead>
-          <tbody>${itemsRepHTML(r, !bloqueada)}</tbody>
-        </table>
-        ${bloqueada ? '' : '<p class="hint">Toca el estado de un ítem para cambiarlo (por ejemplo, si el cliente aprueba después un ítem rechazado).</p>'}`}
+          <tbody>${itemsRepHTML(r, false)}</tbody>
+        </table>`}
       <div class="doc-obs" style="border-top:1px solid #111">
         <div class="lbl">Notas</div>
         <textarea id="rep-notas" rows="3" ${soloLectura() ? 'readonly' : ''} placeholder="Ej: garantía de 3 meses en piezas; reemplazo solo bujes, no muñones: el ruido continuará…">${esc(r.notas)}</textarea>
@@ -328,9 +331,9 @@ function leerEditorRep() {
   const filas = $$('#rep-items-edit tr');
   if (filas.length || $('#rep-items-edit')) {
     r.items = filas.map((tr, i) => {
-      const g = (n) => tr.querySelector(`[data-it="${n}"]`).value;
+      const g = (n) => tr.querySelector(`[data-it="${n}"]`)?.value ?? '';
       const cant = parseDec(g('cant'));
-      return { cant: Number.isFinite(cant) ? cant : 1, unidad: g('unidad'), desc: g('desc').trim(), sku: r.items[i]?.sku || '', estado: r.items[i]?.estado || 'aprobado' };
+      return { cant: Number.isFinite(cant) ? cant : 1, unidad: g('unidad') || 'Und.', desc: g('desc').trim(), sku: g('sku').trim(), estado: r.items[i]?.estado || 'aprobado' };
     });
   }
   // Cliente (nueva reparación)
@@ -376,7 +379,10 @@ async function cerrarRep(id, estado) {
   const actual = db.reparaciones.find((x) => x.id === id); if (!actual) return false;
   if (esCerrada(actual)) { toast('Esta reparación ya estaba cerrada'); return false; }
   const enEditor = repEdit && repEdit.id === id;
-  if (enEditor) leerEditorRep();
+  if (enEditor) {
+    leerEditorRep();
+    if (!repEdit.items.some((it) => it.desc)) { alert('La reparación debe tener al menos un ítem.'); return false; }
+  }
   let nota = ((enEditor ? repEdit.notaEntrega : actual.notaEntrega) || '').trim();
   if (estado === 'culminado' && !nota) {
     nota = await pedirDato({
@@ -390,11 +396,10 @@ async function cerrarRep(id, estado) {
     ? `¿Marcar la reparación ${numRep(actual.numero)} como CULMINADA (nota de entrega ${nota})?\n\nÚsalo cuando el vehículo esté listo, probado y entregado.\nDespués no se podrán modificar los ítems, el técnico ni el estado.`
     : `¿CANCELAR la reparación ${numRep(actual.numero)}?\n\nÚsalo cuando el cliente retiró el vehículo sin realizar la reparación.\nTodos los ítems pasarán a "Rechazado" y después no se podrá modificar.`;
   if (!await confirmar(texto)) return false;
-  if (enEditor) {
+  if (enEditor && !soloLectura()) {
     const r = repEdit;
-    const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
-    if (mismosItems) actual.items.forEach((it, i) => (it.estado = r.items[i].estado));
-    Object.assign(actual, { tecnico: r.tecnico, notas: r.notas });
+    const items = r.items.filter((it) => it.desc);
+    Object.assign(actual, { tecnico: r.tecnico, notas: r.notas, tipo: r.tipo || actual.tipo || 'reparacion', items });
   }
   if (estado === 'cancelado') actual.items.forEach((it) => (it.estado = 'rechazado'));
   Object.assign(actual, {
@@ -437,16 +442,11 @@ async function guardarReparacion(silencioso = false) {
     // Cerrada: solo notas y nota de entrega
     Object.assign(actual, { notas: r.notas, notaEntrega: r.notaEntrega, actualizado: r.actualizado });
     repEdit = JSON.parse(JSON.stringify(actual));
-  } else if (actual && itemsManuales(actual)) {
-    // Manual o desde diagnóstico: ítems y tipo editables
+  } else if (actual && !soloLectura()) {
+    // En proceso: ítems, tipo, técnico, notas y nota de entrega son editables libremente
     const items = r.items.filter((it) => it.desc);
     if (!items.length) { alert('La reparación debe tener al menos un ítem.'); return false; }
     Object.assign(actual, { tecnico: r.tecnico, notas: r.notas, notaEntrega: r.notaEntrega, tipo: r.tipo || 'reparacion', items, actualizado: r.actualizado });
-    repEdit = JSON.parse(JSON.stringify(actual));
-  } else if (actual) {
-    Object.assign(actual, { tecnico: r.tecnico, notas: r.notas, notaEntrega: r.notaEntrega, actualizado: r.actualizado });
-    const mismosItems = actual.items.length === r.items.length && actual.items.every((it, i) => it.desc === r.items[i].desc);
-    if (mismosItems) actual.items.forEach((it, i) => (it.estado = r.items[i].estado));
     repEdit = JSON.parse(JSON.stringify(actual));
   }
   repDirty = false;

@@ -827,3 +827,5 @@ body.rol-taller .solo-admin { display: none !important; }
 .ajuste-sticker { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: .88rem; }
 .ajuste-sticker b { display: inline-block; min-width: 56px; text-align: center; }
 .rep-items-edit textarea[data-it="desc"] { width: 100%; resize: none; overflow: hidden; line-height: 1.35; font-family: inherit; display: block; min-height: 34px; }
+.doc-editor .rep-items-edit th:nth-child(4) { width: 120px; }
+.doc-editor .rep-items-edit th:nth-child(5) { width: 42px; }

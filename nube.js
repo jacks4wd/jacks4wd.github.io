@@ -199,7 +199,8 @@ const Nube = (() => {
   }
 
   // ---------- Actualización con cambios de otros dispositivos ----------
-  const editando = () => (typeof presDirty !== 'undefined' && presDirty) || (typeof rvDirty !== 'undefined' && rvDirty)
+  const editando = () => (typeof presDirty !== 'undefined' && presDirty) || (typeof repDirty !== 'undefined' && repDirty)
+    || (typeof ingDirty !== 'undefined' && ingDirty) || (typeof rvDirty !== 'undefined' && rvDirty)
     || (typeof cfgDirty !== 'undefined' && cfgDirty) || (typeof tecDirty !== 'undefined' && tecDirty) || $('#modal').open;
 
   async function traerCambios() {
