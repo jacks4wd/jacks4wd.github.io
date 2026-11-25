@@ -320,8 +320,6 @@ th.num, td.num { text-align: right; }
 
 .pres-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: sticky; top: 0; z-index: 5; }
 .pres-toolbar .spacer { flex: 1; }
-.estado-sel { display: flex; align-items: center; gap: 6px; }
-.estado-sel select { width: auto; margin: 0; }
 .pres-buscar { padding: 12px 18px; }
 
 /* Documento (editor y PDF comparten estilo) */
@@ -342,9 +340,6 @@ th.num, td.num { text-align: right; }
 .doc-empresa { text-align: right; font-size: 14px; line-height: 1.35; }
 .doc-nombre { font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: .5px; }
 .doc-box { border: 1px solid #111; }
-.doc-fila3 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px; padding: 8px 10px; align-items: center; }
-.doc-fila3 .c { text-align: center; }
-.doc-fila3 .r { text-align: right; }
 .doc-fila { padding: 8px 10px; border-top: 1px solid #111; }
 .doc-fila2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 5px 10px; align-items: center; }
 .doc-fila2 .r { text-align: right; }
@@ -371,7 +366,6 @@ th.num, td.num { text-align: right; }
 
 /* Campos del editor integrados en el documento */
 .doc-editor label { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 400; color: #111; }
-.doc-editor .doc-fila3 label.r { justify-content: flex-end; }
 .doc-editor .doc-fila2 label.r { justify-content: flex-end; }
 .doc-editor .doc-fila2 label input { flex: 1; min-width: 0; max-width: 300px; }
 .doc-editor .doc-fila-opc { border-top: 1px dashed #d1d5db; }
@@ -380,7 +374,6 @@ th.num, td.num { text-align: right; }
 }
 .doc-editor input:hover, .doc-editor textarea:hover { border-color: #d1d5db; }
 .doc-editor input:focus, .doc-editor textarea:focus, .doc-editor select:focus { background: #fff; outline: 2px solid var(--primary); }
-.doc-editor .doc-fila3 label input { flex: 1; min-width: 0; }
 .doc-editor .doc-items { table-layout: fixed; }
 .doc-editor .doc-items th:nth-child(1) { width: 160px; }
 .doc-editor .doc-items th:nth-child(3) { width: 120px; }
